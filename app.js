@@ -23,16 +23,23 @@ function updateButtons() {
     undoBtn.disabled = game.history().length === 0;
     redoBtn.disabled = redoStack.length === 0;
 }
-
 function sync() {
     const inCheck = game.isCheck();
     const checkColor = inCheck ? (game.turn() === "w" ? "white" : "black") : false;
+
+    const arrow = lastMove ? [{ orig: lastMove[0], dest: lastMove[1] }] : [];
 
     ground.set({
         fen: game.fen(),
         check: checkColor,
         highlight: { check: true, lastMove: true },
         lastMove: lastMove ?? undefined,
+
+        // ✅ Pfeil wie auf Lichess
+        drawable: {
+            autoShapes: arrow,
+        },
+
         movable: {
             free: false,
             color: game.turn() === "w" ? "white" : "black",
@@ -42,6 +49,10 @@ function sync() {
 
     updateButtons();
 }
+const arrow = lastMove
+    ? [{ orig: lastMove[0], dest: lastMove[1], brush: "green" }]
+    : [];
+
 
 const ground = Chessground(boardEl, {
     fen: game.fen(),
