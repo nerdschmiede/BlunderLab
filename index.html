@@ -9,16 +9,18 @@
     <link rel="stylesheet" href="https://unpkg.com/chessground@9.2.1/assets/chessground.brown.css">
     <link rel="stylesheet" href="https://unpkg.com/chessground@9.2.1/assets/chessground.cburnett.css">
     <link rel="stylesheet" href="./style.css">
-
-    <style>
-        body { margin: 0; padding: 16px; font-family: system-ui; background: #fafafa; }
-        #board { width: 480px; height: 480px; }
-        #resetBtn
-    </style>
 </head>
 <body>
 
-<h1>BlunderLab</h1>
+<header class="topbar">
+    <h1 class="title">BlunderLab</h1>
+
+    <div class="controls">
+        <button id="undoBtn" class="iconbtn" type="button" aria-label="Zurück" title="Zurück">←</button>
+        <button id="redoBtn" class="iconbtn" type="button" aria-label="Vor" title="Vor">→</button>
+    </div>
+</header>
+
 <div id="board"></div>
 
 <script type="module" src="./app.js"></script>

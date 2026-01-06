@@ -1,25 +1,54 @@
-#board {
-    width: 480px;
-    height: 480px;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow:
-            0 10px 30px rgba(0,0,0,.45),
-            0 0 0 1px rgba(255,255,255,.06);
-}
-
 body {
     margin: 0;
     padding: 16px;
-    background:
-            radial-gradient(1200px 600px at 50% -200px,
-            #3a3a3a 0%,
-            #262626 45%,
-            #1f1f1f 70%,
-            #1b1b1b 100%);
-
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #fafafa;
 }
+
+#board {
+    width: min(92vw, 520px);
+    height: min(92vw, 520px);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* Topbar */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.title {
+    margin: 0;
+    font-size: 22px;
+}
+
+/* Mobile-friendly controls */
+.controls {
+    display: flex;
+    gap: 10px;
+}
+
+.iconbtn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.15);
+    background: white;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.iconbtn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 
 
 /* --- Lichess-Feldfarben (Override über Chessground Theme) --- */
