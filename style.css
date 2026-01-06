@@ -20,6 +20,8 @@ body {
 
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
+
+
 /* --- Lichess-Feldfarben (Override über Chessground Theme) --- */
 :root {
     --lichess-light: #f0d9b5;
