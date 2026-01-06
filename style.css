@@ -1,0 +1,48 @@
+#board {
+    width: 480px;
+    height: 480px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow:
+            0 10px 30px rgba(0,0,0,.45),
+            0 0 0 1px rgba(255,255,255,.06);
+}
+
+body {
+    margin: 0;
+    padding: 16px;
+    background:
+            radial-gradient(1200px 600px at 50% -200px,
+            #3a3a3a 0%,
+            #262626 45%,
+            #1f1f1f 70%,
+            #1b1b1b 100%);
+
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+/* --- Lichess-Feldfarben (Override über Chessground Theme) --- */
+:root {
+    --lichess-light: #f0d9b5;
+    --lichess-dark:  #b58863;
+}
+:root {
+    --lichess-light: #f0d9b5;
+    --lichess-dark:  #b58863;
+}
+
+/* EXAKTES Lichess-Schachbrett als SVG-Hintergrund (überschreibt chessground.brown.css) */
+cg-board {
+    background-color: var(--lichess-light) !important;
+    background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'>\
+<defs>\
+<pattern id='p' width='2' height='2' patternUnits='userSpaceOnUse'>\
+<rect width='1' height='1' fill='%23f0d9b5'/>\
+<rect x='1' width='1' height='1' fill='%23b58863'/>\
+<rect y='1' width='1' height='1' fill='%23b58863'/>\
+<rect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/>\
+</pattern>\
+</defs>\
+<rect width='8' height='8' fill='url(%23p)'/>\
+</svg>") !important;
+}

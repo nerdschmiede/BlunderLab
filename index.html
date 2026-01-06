@@ -1,10 +1,26 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BlunderLab</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/chessground@9.2.1/assets/chessground.base.css">
+    <link rel="stylesheet" href="https://unpkg.com/chessground@9.2.1/assets/chessground.brown.css">
+    <link rel="stylesheet" href="https://unpkg.com/chessground@9.2.1/assets/chessground.cburnett.css">
+    <link rel="stylesheet" href="./style.css">
+
+    <style>
+        body { margin: 0; padding: 16px; font-family: system-ui; background: #fafafa; }
+        #board { width: 480px; height: 480px; }
+        #resetBtn
+    </style>
 </head>
 <body>
-$END$
+
+<h1>BlunderLab</h1>
+<div id="board"></div>
+
+<script type="module" src="./app.js"></script>
 </body>
 </html>
