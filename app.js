@@ -49,10 +49,6 @@ function sync() {
 
     updateButtons();
 }
-const arrow = lastMove
-    ? [{ orig: lastMove[0], dest: lastMove[1], brush: "green" }]
-    : [];
-
 
 const ground = Chessground(boardEl, {
     fen: game.fen(),
