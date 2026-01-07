@@ -134,16 +134,6 @@ resetBtn.addEventListener("click", () => {
     sync();
 });
 
-function tryLoadFen(fen) {
-    try {
-        if (typeof game.load === "function") return game.load(fen);
-        if (typeof game.loadFen === "function") return game.loadFen(fen);
-        return false;
-    } catch {
-        return false;
-    }
-}
-
 function applyFenFromInput() {
     const fen = fenLine.value.trim().replace(/\s+/g, " ");
     if (!fen) return;
