@@ -96,3 +96,23 @@ cg-board {
     align-items: flex-start; /* oder center, wenn du willst */
     top: -20px; /* wie bei dir */
 }
+
+.fenline {
+    width: min(100vw - (2 * var(--pad)), var(--max));
+}
+
+#fenLine {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.15);
+    background: #fff;
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Ungültige FEN visuell markieren */
+#fenLine.invalid {
+    border-color: #b00020;
+    background: #fff5f6;
+}

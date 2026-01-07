@@ -6,6 +6,9 @@ const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetBtn = document.getElementById("resetBtn");
 
+const fenLine = document.getElementById("fenLine");
+
+
 const game = new Chess();
 const redoStack = [];          // speichert undone moves für Redo
 let lastMove = null;           // [from, to] für Lichess-Highlight
@@ -46,7 +49,12 @@ function sync() {
             color: game.turn() === "w" ? "white" : "black",
             dests: calcDests(game),
         },
+
     });
+
+    // FEN-Zeile aktuell halten
+    fenLine.value = game.fen();
+    fenLine.classList.remove("invalid");
 
     updateButtons();
 }
@@ -124,6 +132,47 @@ resetBtn.addEventListener("click", () => {
     redoStack.length = 0;
     lastMove = null;
     sync();
+});
+
+function tryLoadFen(fen) {
+    try {
+        if (typeof game.load === "function") return game.load(fen);
+        if (typeof game.loadFen === "function") return game.loadFen(fen);
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+function applyFenFromInput() {
+    const fen = fenLine.value.trim().replace(/\s+/g, " ");
+    if (!fen) return;
+
+    try {
+        game.load(fen);   // SUCCESS → kein return-Wert nötig
+    } catch {
+        fenLine.classList.add("invalid");
+        return;
+    }
+
+    redoStack.length = 0;
+    lastMove = null;
+    fenLine.classList.remove("invalid");
+    sync();
+}
+
+
+
+fenLine.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+        e.preventDefault();
+        applyFenFromInput();
+        fenLine.blur(); // optional: Handy-Tastatur zu
+    }
+});
+
+fenLine.addEventListener("blur", () => {
+    applyFenFromInput();
 });
 
 
