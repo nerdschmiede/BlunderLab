@@ -53,6 +53,7 @@ function sync() {
 const ground = Chessground(boardEl, {
     fen: game.fen(),
     orientation: "white",
+
     highlight: { check: true, lastMove: true },
     movable: {
         free: false,

@@ -1,44 +1,52 @@
+:root {
+    --pad: 12px;
+    --max: 520px;
+}
+
 body {
     margin: 0;
-    padding: 16px;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     background: #fafafa;
+    color: #111;
 }
 
-#board {
-    width: min(92vw, 520px);
-    height: min(92vw, 520px);
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-/* Topbar */
-.topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+/* Zentriert alles, aber mobile nutzt volle Breite */
+.page {
+    padding: var(--pad);
+    display: grid;
+    justify-items: center;
     gap: 12px;
-    margin-bottom: 12px;
 }
 
+/* Überschrift */
 .title {
-    margin: 0;
+    margin: 4px 0 2px;
     font-size: 22px;
 }
 
-/* Mobile-friendly controls */
-.controls {
-    display: flex;
-    gap: 10px;
+/* Brett: volle Fensterbreite (abzgl. Padding), quadratisch */
+.board {
+    width: min(100vw - (2 * var(--pad)), var(--max));
+    height: min(100vw - (2 * var(--pad)), var(--max));
+    overflow: hidden;
 }
 
+/* Buttons mittig unter dem Brett */
+.controls {
+    width: min(100vw - (2 * var(--pad)), var(--max));
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+/* Thumb-friendly buttons */
 .iconbtn {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
     border: 1px solid rgba(0,0,0,.15);
     background: white;
-    font-size: 20px;
+    font-size: 22px;
     line-height: 1;
     cursor: pointer;
     touch-action: manipulation;
@@ -50,12 +58,8 @@ body {
 }
 
 
-
 /* --- Lichess-Feldfarben (Override über Chessground Theme) --- */
-:root {
-    --lichess-light: #f0d9b5;
-    --lichess-dark:  #b58863;
-}
+
 :root {
     --lichess-light: #f0d9b5;
     --lichess-dark:  #b58863;
@@ -76,4 +80,19 @@ cg-board {
 </defs>\
 <rect width='8' height='8' fill='url(%23p)'/>\
 </svg>") !important;
+}
+
+/* Zeilenbezeichnung nach rechts verschieben
+
+1) Falls "left" existiert: links abschalten */
+.cg-wrap coords.ranks.left {
+    display: none !important;
+}
+
+/* 2) Den (einzigen) ranks-Container nach rechts schieben */
+.cg-wrap coords.ranks {
+    left: auto !important;
+    right: -4px !important;   /* symmetrisch zu left:4px */
+    align-items: flex-start; /* oder center, wenn du willst */
+    top: -20px; /* wie bei dir */
 }
