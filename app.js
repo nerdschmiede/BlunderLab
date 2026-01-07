@@ -4,6 +4,7 @@ import { Chess } from "https://esm.sh/chess.js@1.0.0";
 const boardEl = document.getElementById("board");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
+const resetBtn = document.getElementById("resetBtn");
 
 const game = new Chess();
 const redoStack = [];          // speichert undone moves für Redo
@@ -117,6 +118,14 @@ redoBtn.addEventListener("click", () => {
 
     sync();
 });
+
+resetBtn.addEventListener("click", () => {
+    game.reset();
+    redoStack.length = 0;
+    lastMove = null;
+    sync();
+});
+
 
 // Initial
 lastMove = null;
