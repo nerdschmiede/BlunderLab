@@ -114,12 +114,15 @@ function clearPromoChoices() {
 }
 
 function sync() {
+    const turn = game.turn() === "w" ? "white" : "black";
+
     // chess.js@1.0.0
     const inCheck = game.inCheck();
     const checkColor = inCheck ? (game.turn() === "w" ? "white" : "black") : false;
 
     ground.set({
         fen: game.fen(),
+        turnColor: turn,
         check: checkColor,
         highlight: { check: true, lastMove: true },
         lastMove: lastMove ?? undefined,
