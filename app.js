@@ -5,11 +5,15 @@ const boardEl = document.getElementById("board");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetBtn = document.getElementById("resetBtn");
+const flipBtn = document.getElementById("flipBtn");
+const lichessBtn = document.getElementById("lichessBtn");
+
 const fenLine = document.getElementById("fenLine");
 
 const game = new Chess();
 const redoStack = [];
 let lastMove = null;
+let orientation = localStorage.getItem("blunderlab.orientation") || "white";
 
 // Promotion-Auswahl auf dem Brett (Lichess-Style)
 let promoPick = null; // { from, to, chessColor, squares }
@@ -40,6 +44,29 @@ function isPromotionMove(from, to) {
 function cgColor(chessColor) {
     return chessColor === "w" ? "white" : "black";
 }
+
+function lichessAnalysisUrlFromFen(fen, orientation = "white") {
+    const parts = fen.trim().split(/\s+/);
+
+    if (parts.length < 4) {
+        return "https://lichess.org/analysis";
+    }
+
+    const board = parts[0];      // mit /
+    const turn = parts[1];       // w | b
+    const castling = parts[2];   // KQkq | -
+    const ep = parts[3];         // - | e3
+
+    // Halbzug & Zugnummer optional (Lichess ignoriert sie)
+    const halfmove = parts[4] ?? "0";
+    const fullmove = parts[5] ?? "1";
+
+    const fenPath =
+        `${board}_${turn}_${castling}_${ep}_${halfmove}_${fullmove}`;
+
+    return `https://lichess.org/analysis/standard/${fenPath}?color=${orientation}`;
+}
+
 
 function promoSquares(to, chessColor) {
     const file = to[0];
@@ -141,11 +168,11 @@ function sync() {
 
 const ground = Chessground(boardEl, {
     fen: game.fen(),
-    orientation: "white",
+    orientation: orientation,
     highlight: { check: true, lastMove: true },
     movable: {
         free: false,
-        color: "white",
+        color: orientation,
         dests: calcDests(game),
     },
     events: {
@@ -295,6 +322,22 @@ resetBtn.addEventListener("click", () => {
     lastMove = null;
     sync();
 });
+
+lichessBtn.addEventListener("click", () => {
+    const url = lichessAnalysisUrlFromFen(game.fen());
+    window.open(url, "_blank", "noopener,noreferrer");
+});
+
+flipBtn.addEventListener("click", () => {
+    orientation = orientation === "white" ? "black" : "white";
+    localStorage.setItem("blunderlab.orientation", orientation);
+
+    ground.set({ orientation });
+
+    // Optional: falls du beim Drehen die Auswahl loswerden willst
+    // ground.set({ selected: undefined });
+});
+
 
 // Initial
 sync();
