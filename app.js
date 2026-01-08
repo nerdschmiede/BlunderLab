@@ -200,15 +200,34 @@ const ground = Chessground(boardEl, {
 requestAnimationFrame(() => ensurePromoDimmer());
 
 function applyFenFromInput() {
-    // falls noch Promotion offen war: weg damit
     clearPromoChoices();
 
     const fen = fenLine.value.trim().replace(/\s+/g, " ");
     if (!fen) return;
 
-    const ok = game.load(fen); // chess.js@1.0.0 -> boolean
+    let ok = true;
+
+    try {
+        const r = game.load(fen);
+        // manche chess.js builds geben false zurück statt zu werfen
+        if (r === false) ok = false;
+    } catch (e) {
+        ok = false;
+    }
+
+    // optionaler Fallback (falls unterstützt)
+    if (!ok) {
+        try {
+            const r2 = game.load(fen, { sloppy: true });
+            ok = r2 === false ? false : true;
+        } catch (e) {
+            ok = false;
+        }
+    }
+
     if (!ok) {
         fenLine.classList.add("invalid");
+        console.warn("FEN invalid:", fen);
         return;
     }
 
@@ -217,6 +236,8 @@ function applyFenFromInput() {
     fenLine.classList.remove("invalid");
     sync();
 }
+
+
 
 fenLine.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
