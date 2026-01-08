@@ -1,6 +1,10 @@
 :root {
     --pad: 12px;
     --max: 520px;
+
+    /* Lichess-Brettfarben */
+    --lichess-light: #f0d9b5;
+    --lichess-dark:  #b58863;
 }
 
 body {
@@ -10,7 +14,7 @@ body {
     color: #111;
 }
 
-/* Zentriert alles, aber mobile nutzt volle Breite */
+/* Layout: mobile-first, zentriert */
 .page {
     padding: var(--pad);
     display: grid;
@@ -18,22 +22,21 @@ body {
     gap: 12px;
 }
 
-/* Überschrift */
 .title {
     margin: 4px 0 2px;
     font-size: 22px;
 }
 
-/* Brett: volle Fensterbreite (abzgl. Padding), quadratisch */
+/* Board: volle Breite, quadratisch */
 .board {
-    width: min(100vw - (2 * var(--pad)), var(--max));
-    height: min(100vw - (2 * var(--pad)), var(--max));
+    width: min(calc(100vw - (2 * var(--pad))), var(--max));
+    height: min(calc(100vw - (2 * var(--pad))), var(--max));
     overflow: hidden;
 }
 
 /* Buttons mittig unter dem Brett */
 .controls {
-    width: min(100vw - (2 * var(--pad)), var(--max));
+    width: min(calc(100vw - (2 * var(--pad))), var(--max));
     display: flex;
     justify-content: center;
     gap: 12px;
@@ -44,8 +47,8 @@ body {
     width: 52px;
     height: 52px;
     border-radius: 14px;
-    border: 1px solid rgba(0,0,0,.15);
-    background: white;
+    border: 1px solid rgba(0, 0, 0, .15);
+    background: #fff;
     font-size: 22px;
     line-height: 1;
     cursor: pointer;
@@ -57,62 +60,76 @@ body {
     cursor: not-allowed;
 }
 
-
-/* --- Lichess-Feldfarben (Override über Chessground Theme) --- */
-
-:root {
-    --lichess-light: #f0d9b5;
-    --lichess-dark:  #b58863;
-}
-
-/* EXAKTES Lichess-Schachbrett als SVG-Hintergrund (überschreibt chessground.brown.css) */
-cg-board {
-    background-color: var(--lichess-light) !important;
-    background-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'>\
-<defs>\
-<pattern id='p' width='2' height='2' patternUnits='userSpaceOnUse'>\
-<rect width='1' height='1' fill='%23f0d9b5'/>\
-<rect x='1' width='1' height='1' fill='%23b58863'/>\
-<rect y='1' width='1' height='1' fill='%23b58863'/>\
-<rect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/>\
-</pattern>\
-</defs>\
-<rect width='8' height='8' fill='url(%23p)'/>\
-</svg>") !important;
-}
-
-/* Zeilenbezeichnung nach rechts verschieben
-
-1) Falls "left" existiert: links abschalten */
-.cg-wrap coords.ranks.left {
-    display: none !important;
-}
-
-/* 2) Den (einzigen) ranks-Container nach rechts schieben */
-.cg-wrap coords.ranks {
-    left: auto !important;
-    right: -4px !important;   /* symmetrisch zu left:4px */
-    align-items: flex-start; /* oder center, wenn du willst */
-    top: -20px; /* wie bei dir */
-}
-
+/* FEN-Zeile */
 .fenline {
-    width: min(100vw - (2 * var(--pad)), var(--max));
+    width: min(calc(100vw - (2 * var(--pad))), var(--max));
 }
 
 #fenLine {
     width: 100%;
     padding: 10px 12px;
     border-radius: 12px;
-    border: 1px solid rgba(0,0,0,.15);
+    border: 1px solid rgba(0, 0, 0, .15);
     background: #fff;
     font-size: 13px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Ungültige FEN visuell markieren */
 #fenLine.invalid {
     border-color: #b00020;
     background: #fff5f6;
+}
+
+/* --- Board Look (Lichess-Schachmuster) --- */
+cg-board {
+    background-color: var(--lichess-light) !important;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'><defs><pattern id='p' width='2' height='2' patternUnits='userSpaceOnUse'><rect width='1' height='1' fill='%23f0d9b5'/><rect x='1' width='1' height='1' fill='%23b58863'/><rect y='1' width='1' height='1' fill='%23b58863'/><rect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/></pattern></defs><rect width='8' height='8' fill='url(%23p)'/></svg>") !important;
+}
+
+/* --- Koordinaten: ranks nach rechts --- */
+.cg-wrap coords.ranks.left {
+    display: none !important;
+}
+
+.cg-wrap coords.ranks {
+    left: auto !important;
+    right: -4px !important;
+    align-items: flex-start;
+    top: -20px;
+}
+
+/* --- Promotion Fokus (ohne Fade) ---
+   Wir dimmen das Board über ein echtes Element (.promo-dimmer)
+   und setzen die 4 Promo-Felder darüber. */
+.cg-wrap {
+    position: relative;
+}
+
+.cg-wrap .promo-dimmer {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+    z-index: 5;
+}
+
+.cg-wrap.promo-active .promo-dimmer {
+    opacity: 1;
+}
+
+/* Promo-Felder + Figuren über dem Dimmer */
+.cg-wrap.promo-active square.promo {
+    position: relative;
+    z-index: 6;
+    box-shadow:
+            inset 0 0 0 3px rgba(255, 255, 255, 0.55),
+            inset 0 0 0 6px rgba(0, 0, 0, 0.25);
+}
+
+.cg-wrap.promo-active square.promo piece,
+.cg-wrap.promo-active square.promo .piece {
+    position: relative;
+    z-index: 7;
 }

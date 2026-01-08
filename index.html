@@ -5,16 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BlunderLab</title>
 
+    <!-- Local chessground assets (from lichess/chessground repo) -->
     <link rel="stylesheet" href="./assets/chessground.base.css">
     <link rel="stylesheet" href="./assets/chessground.brown.css">
     <link rel="stylesheet" href="./assets/chessground.cburnett.css">
+
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
 <main class="page">
     <h1 class="title">BlunderLab</h1>
 
-    <div id="board" class="board"></div>
+    <div id="board" class="board" aria-label="Schachbrett"></div>
 
     <div class="controls" aria-label="Zugsteuerung">
         <button id="undoBtn" class="iconbtn" type="button" aria-label="Zurück">←</button>
@@ -29,13 +31,11 @@
                 spellcheck="false"
                 autocomplete="off"
                 placeholder="FEN"
+                aria-label="FEN"
         />
     </div>
-
-
 </main>
 
 <script type="module" src="./app.js"></script>
 </body>
-
 </html>
