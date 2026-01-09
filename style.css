@@ -1,10 +1,17 @@
 :root {
     --pad: 12px;
-    --max: 520px;
+    --board-max: 92vmin;
+    --fenline-max: 90vmin;
 
     /* Lichess-Brettfarben */
     --lichess-light: #f0d9b5;
     --lichess-dark:  #b58863;
+}
+
+@media (orientation: landscape) {
+    :root {
+        --board-max: 90vmin;
+    }
 }
 
 body {
@@ -16,7 +23,6 @@ body {
 
 /* Layout: mobile-first, zentriert */
 .page {
-    padding: var(--pad);
     display: grid;
     justify-items: center;
     gap: 12px;
@@ -29,18 +35,19 @@ body {
 
 /* Board: volle Breite, quadratisch */
 .board {
-    width: min(calc(100vw - (2 * var(--pad))), var(--max));
-    height: min(calc(100vw - (2 * var(--pad))), var(--max));
-    overflow: hidden;
+    width: min(100vw, var(--board-max));
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
 }
 
 /* Buttons mittig unter dem Brett */
 .controls {
-    width: min(calc(100vw - (2 * var(--pad))), var(--max));
+    width: min(100vw, var(--board-max));
     display: flex;
     justify-content: center;
     gap: 12px;
     flex-wrap: wrap;
+    margin: 0 auto;
 }
 
 /* Thumb-friendly buttons */
@@ -61,14 +68,12 @@ body {
     cursor: not-allowed;
 }
 
-/* FEN-Zeile */
-.fenline {
-    width: min(calc(100vw - (2 * var(--pad))), var(--max));
-}
-
 #fenLine {
-    width: 100%;
+    display: block;
+    width:min(100vw, var(--board-max));
+    box-sizing: border-box;
     padding: 10px 12px;
+    margin: 0 auto;
     border-radius: 12px;
     border: 1px solid rgba(0, 0, 0, .15);
     background: #fff;
