@@ -8,6 +8,8 @@ const resetBtn = document.getElementById("resetBtn");
 const flipBtn = document.getElementById("flipBtn");
 const lichessBtn = document.getElementById("lichessBtn");
 
+const pgnEl = document.getElementById("pgn");
+
 const fenLine = document.getElementById("fenLine");
 
 const game = new Chess();
@@ -140,6 +142,62 @@ function clearPromoChoices() {
     promoPick = null;
 }
 
+function renderPgn() {
+    const moves = game.history({ verbose: true }); // aktuelle Line
+    const currentPly = moves.length;
+
+    // HTML bauen
+    let html = "";
+
+    for (let i = 0; i < moves.length; i++) {
+        const mv = moves[i];
+
+        // Move-Nummer vor jedem weißen Zug
+        if (i % 2 === 0) {
+            const moveNo = Math.floor(i / 2) + 1;
+            html += `<span class="num">${moveNo}.</span>`;
+        }
+
+        const active = (i + 1) === currentPly ? "active" : "";
+        html += `<span class="mv ${active}" data-ply="${i + 1}">${mv.san}</span>`;
+    }
+
+    pgnEl.innerHTML = html || `<span class="num">—</span>`;
+}
+
+function jumpToPly(targetPly) {
+    clearPromoChoices?.(); // falls vorhanden
+
+    const full = game.history({ verbose: true });
+
+    // targetPly: 0..full.length
+    const n = Math.max(0, Math.min(full.length, targetPly));
+
+    game.reset();
+    for (let i = 0; i < n; i++) {
+        const m = full[i];
+        game.move({
+            from: m.from,
+            to: m.to,
+            promotion: m.promotion, // undefined wenn keine Promotion
+        });
+    }
+
+    // Redo-Stack ist nach Jump nicht mehr sinnvoll
+    redoStack.length = 0;
+
+    // lastMove aktualisieren
+    if (n > 0) {
+        const last = full[n - 1];
+        lastMove = [last.from, last.to];
+    } else {
+        lastMove = null;
+    }
+
+    sync();
+}
+
+
 function sync() {
     const turn = game.turn() === "w" ? "white" : "black";
 
@@ -162,6 +220,8 @@ function sync() {
 
     fenLine.value = game.fen();
     fenLine.classList.remove("invalid");
+
+    renderPgn();
 
     updateButtons();
 }
@@ -336,6 +396,12 @@ flipBtn.addEventListener("click", () => {
 
     // Optional: falls du beim Drehen die Auswahl loswerden willst
     // ground.set({ selected: undefined });
+});
+
+pgnEl.addEventListener("click", (e) => {
+    const mv = e.target.closest(".mv");
+    if (!mv) return;
+    jumpToPly(parseInt(mv.dataset.ply, 10));
 });
 
 

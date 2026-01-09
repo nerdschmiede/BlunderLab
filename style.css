@@ -139,3 +139,43 @@ cg-board {
     position: relative;
     z-index: 7;
 }
+
+.pgnline {
+    width: min(100vw, var(--board-max));
+    margin: 0 auto;
+}
+
+#pgn {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.12);
+    background: #fff;
+    font-size: 13px;
+    line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+#pgn .mv {
+    display: inline-block;
+    padding: 2px 6px;
+    margin: 2px 2px;
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+#pgn .mv:hover {
+    background: rgba(0,0,0,.06);
+}
+
+#pgn .mv.active {
+    background: rgba(0,0,0,.12);
+}
+
+#pgn .num {
+    opacity: 0.55;
+    margin-right: 4px;
+}
