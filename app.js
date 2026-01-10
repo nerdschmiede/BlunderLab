@@ -16,7 +16,6 @@ const pgnEl = document.getElementById("pgn");
 const fenLine = document.getElementById("fenLine");
 
 const game = new Chess();
-const redoStack = [];
 let lastMove = null;
 let orientation = localStorage.getItem("blunderlab.orientation") || "white";
 
@@ -44,22 +43,6 @@ function setPositionFromFullLine(ply) {
     }
 }
 
-function goPrevPly() {
-    if (!fullLine.length) return;
-    viewPly = Math.max(0, viewPly - 1);
-    setPositionFromFullLine(viewPly);
-    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
-    sync({ save: false });
-}
-
-function goNextPly() {
-    if (!fullLine.length) return;
-    viewPly = Math.min(fullLine.length, viewPly + 1);
-    setPositionFromFullLine(viewPly);
-    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
-    sync({ save: false });
-}
-
 /** Alle legalen Ziele pro Startfeld (für Chessground movable.dests) */
 function calcDests(chess) {
     const dests = new Map();
@@ -72,8 +55,8 @@ function calcDests(chess) {
 }
 
 function updateButtons() {
-    undoBtn.disabled = (viewPly === 0);
-    redoBtn.disabled = (viewPly === fullLine.length);
+    undoBtn.disabled = viewPly <= 0;
+    redoBtn.disabled = viewPly >= fullLine.length;
 }
 
 
@@ -246,18 +229,15 @@ const ground = Chessground(boardEl, {
         move: (from, to) => {
             // 0) Wenn wir in der Vergangenheit sind: Edit-Commit vorbereiten
             if (viewPly < fullLine.length) {
-                // Master-Line abschneiden
                 fullLine = fullLine.slice(0, viewPly);
 
-                // game exakt auf diesen Stand bringen
                 game.reset();
-                for (const m of fullLine) {
-                    game.move({ from: m.from, to: m.to, promotion: m.promotion });
-                }
+                for (const m of fullLine) game.move({ from: m.from, to: m.to, promotion: m.promotion });
 
-                // Redo macht nach einem Branch keinen Sinn mehr
-                redoStack.length = 0;
+                // jetzt bist du wieder "live" am Ende der gekürzten Line
+                viewPly = fullLine.length;
             }
+
 
             // 1) Promotion?
             if (promoPick) return;
@@ -272,8 +252,8 @@ const ground = Chessground(boardEl, {
 
             // 3) Jetzt ist das die neue Master-Line
             fullLine = game.history({ verbose: true });
-            viewPly = fullLine.length;
-            fullPgn = game.pgn();
+            fullPgn  = game.pgn();
+            viewPly  = fullLine.length;
 
             lastMove = [mv.from, mv.to];
 
@@ -303,7 +283,6 @@ const ground = Chessground(boardEl, {
                 return;
             }
 
-            redoStack.length = 0;
             lastMove = [mv.from, mv.to];
             sync();
         },
@@ -345,7 +324,6 @@ function applyFenFromInput() {
         return;
     }
 
-    redoStack.length = 0;
     lastMove = null;
     fenLine.classList.remove("invalid");
     sync();
@@ -360,13 +338,28 @@ fenLine.addEventListener("keydown", (e) => {
 });
 fenLine.addEventListener("blur", applyFenFromInput);
 
+function goPrevPly() {
+    if (!fullLine.length) return;
+    viewPly = Math.max(0, viewPly - 1);
+    setPositionFromFullLine(viewPly);
+    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
+    sync({ save: false });
+}
+
+function goNextPly() {
+    if (!fullLine.length) return;
+    viewPly = Math.min(fullLine.length, viewPly + 1);
+    setPositionFromFullLine(viewPly);
+    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
+    sync({ save: false });
+}
+
 undoBtn.addEventListener("click", goPrevPly);
 redoBtn.addEventListener("click", goNextPly);
 
 resetBtn.addEventListener("click", () => {
     clearPromoChoices();
     game.reset();
-    redoStack.length = 0;
     lastMove = null;
     sync();
 });
@@ -414,11 +407,8 @@ pgnEl.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-    // Nicht abfangen, wenn man gerade tippt
     const tag = document.activeElement?.tagName;
-    const isTyping = tag === "INPUT" || tag === "TEXTAREA";
-
-    if (isTyping) return;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
 
     if (e.key === "ArrowLeft") {
         e.preventDefault();
@@ -431,6 +421,7 @@ document.addEventListener("keydown", (e) => {
 
 
 
+
 const savedPgn = localStorage.getItem(STORAGE_PGN_KEY);
 if (savedPgn) {
     try {
@@ -440,10 +431,9 @@ if (savedPgn) {
     }
 }
 
-// ✅ Vollinie + View initialisieren
 fullLine = game.history({ verbose: true });
+fullPgn = game.pgn();
 viewPly = fullLine.length;
 lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
 
 sync({ save: false });
-
