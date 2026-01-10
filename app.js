@@ -200,8 +200,13 @@ function sync({ save = true } = {}) {
 
     ground.set({
         fen: game.fen(),
-        turnColor: turn,
-        movable: { free: false, color: turn, dests: calcDests(game) },
+        movable: {
+            free: false,
+            color: game.turn() === "w" ? "white" : "black",
+            dests: calcDests(game),
+        },
+        turnColor: game.turn() === "w" ? "white" : "black",
+
         check: checkColor,
         highlight: { check: true, lastMove: true },
         lastMove: lastMove ?? undefined,
@@ -279,12 +284,18 @@ const ground = Chessground(boardEl, {
             clearPromoChoices();
 
             if (!mv) {
-                sync();
+                sync({ save: false });
                 return;
             }
 
+            // ✅ Commit wie bei normalen Zügen
+            fullLine = game.history({ verbose: true });
+            fullPgn  = game.pgn();
+            viewPly  = fullLine.length;
+
             lastMove = [mv.from, mv.to];
-            sync();
+
+            sync({ save: true });
         },
     },
 });

@@ -7,11 +7,19 @@
     --lichess-light: #f0d9b5;
     --lichess-dark:  #b58863;
 }
+*, *::before, *::after {
+    box-sizing: border-box;
+}
 
 @media (orientation: landscape) {
     :root {
         --board-max: 90vmin;
     }
+}
+
+html, body {
+    width: 100%;
+    overflow-x: hidden;
 }
 
 body {
@@ -35,14 +43,14 @@ body {
 
 /* Board: volle Breite, quadratisch */
 .board {
-    width: min(100vw, var(--board-max));
+    width: min(100%, var(--board-max));
     aspect-ratio: 1 / 1;
     margin: 0 auto;
 }
 
 /* Buttons mittig unter dem Brett */
 .controls {
-    width: min(100vw, var(--board-max));
+    width: min(100%, var(--board-max));
     display: flex;
     justify-content: center;
     gap: 12px;
