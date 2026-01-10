@@ -23,8 +23,6 @@ let orientation = localStorage.getItem("blunderlab.orientation") || "white";
 let fullLine = [];      // komplette Line (verbose moves)
 let viewPly = null;     // null = am Ende; sonst 0..fullLine.length
 let fullPgn = "";       // gespeichertes PGN der vollen Line
-const isViewing = viewPly < fullLine.length;
-
 
 // Promotion-Auswahl auf dem Brett (Lichess-Style)
 let promoPick = null; // { from, to, chessColor, squares }
@@ -95,7 +93,6 @@ function lichessAnalysisUrlFromFen(fen, orientation = "white") {
 
     return `https://lichess.org/analysis/standard/${fenPath}?color=${orientation}`;
 }
-
 
 function promoSquares(to, chessColor) {
     const file = to[0];
@@ -188,40 +185,6 @@ function renderPgn() {
 
     pgnEl.innerHTML = html || `<span class="num">—</span>`;
 }
-
-
-function jumpToPly(targetPly) {
-    clearPromoChoices?.(); // falls vorhanden
-
-    const full = game.history({ verbose: true });
-
-    // targetPly: 0..full.length
-    const n = Math.max(0, Math.min(full.length, targetPly));
-
-    game.reset();
-    for (let i = 0; i < n; i++) {
-        const m = full[i];
-        game.move({
-            from: m.from,
-            to: m.to,
-            promotion: m.promotion, // undefined wenn keine Promotion
-        });
-    }
-
-    // Redo-Stack ist nach Jump nicht mehr sinnvoll
-    redoStack.length = 0;
-
-    // lastMove aktualisieren
-    if (n > 0) {
-        const last = full[n - 1];
-        lastMove = [last.from, last.to];
-    } else {
-        lastMove = null;
-    }
-
-    sync();
-}
-
 
 function sync({ save = true } = {}) {
     const atEnd = (viewPly === fullLine.length);
@@ -372,8 +335,6 @@ function applyFenFromInput() {
     sync();
 }
 
-
-
 fenLine.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
         e.preventDefault();
@@ -398,8 +359,6 @@ redoBtn.addEventListener("click", () => {
     lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
     sync({ save: false });
 });
-
-
 
 resetBtn.addEventListener("click", () => {
     clearPromoChoices();
