@@ -1,7 +1,7 @@
 import { Chessground } from "https://esm.sh/chessground@9.2.1";
 import { Chess } from "https://esm.sh/chess.js@1.0.0";
 
-
+const STORAGE_PGN_KEY = "blunderlab.pgn";
 
 const boardEl = document.getElementById("board");
 const undoBtn = document.getElementById("undoBtn");
@@ -22,6 +22,15 @@ let orientation = localStorage.getItem("blunderlab.orientation") || "white";
 
 // Promotion-Auswahl auf dem Brett (Lichess-Style)
 let promoPick = null; // { from, to, chessColor, squares }
+
+function autoSavePgn() {
+    try {
+        const pgn = game.pgn();
+        localStorage.setItem(STORAGE_PGN_KEY, pgn);
+    } catch (e) {
+        console.warn("Auto-save PGN failed:", e);
+    }
+}
 
 /** Alle legalen Ziele pro Startfeld (für Chessground movable.dests) */
 function calcDests(chess) {
@@ -227,6 +236,8 @@ function sync() {
     renderPgn();
 
     updateButtons();
+
+    autoSavePgn();
 }
 
 const ground = Chessground(boardEl, {
@@ -422,6 +433,14 @@ pgnEl.addEventListener("click", (e) => {
     jumpToPly(parseInt(mv.dataset.ply, 10));
 });
 
+const savedPgn = localStorage.getItem(STORAGE_PGN_KEY);
+if (savedPgn) {
+    try {
+        game.loadPgn(savedPgn);
+    } catch (e) {
+        console.warn("Failed to load saved PGN:", e);
+    }
+}
 
 // Initial
 sync();
