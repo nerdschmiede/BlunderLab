@@ -44,6 +44,22 @@ function setPositionFromFullLine(ply) {
     }
 }
 
+function goPrevPly() {
+    if (!fullLine.length) return;
+    viewPly = Math.max(0, viewPly - 1);
+    setPositionFromFullLine(viewPly);
+    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
+    sync({ save: false });
+}
+
+function goNextPly() {
+    if (!fullLine.length) return;
+    viewPly = Math.min(fullLine.length, viewPly + 1);
+    setPositionFromFullLine(viewPly);
+    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
+    sync({ save: false });
+}
+
 /** Alle legalen Ziele pro Startfeld (für Chessground movable.dests) */
 function calcDests(chess) {
     const dests = new Map();
@@ -344,21 +360,8 @@ fenLine.addEventListener("keydown", (e) => {
 });
 fenLine.addEventListener("blur", applyFenFromInput);
 
-undoBtn.addEventListener("click", () => {
-    if (!fullLine.length) return;
-    viewPly = Math.max(0, viewPly - 1);
-    setPositionFromFullLine(viewPly);
-    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
-    sync({ save: false });
-});
-
-redoBtn.addEventListener("click", () => {
-    if (!fullLine.length) return;
-    viewPly = Math.min(fullLine.length, viewPly + 1);
-    setPositionFromFullLine(viewPly);
-    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
-    sync({ save: false });
-});
+undoBtn.addEventListener("click", goPrevPly);
+redoBtn.addEventListener("click", goNextPly);
 
 resetBtn.addEventListener("click", () => {
     clearPromoChoices();
@@ -408,6 +411,22 @@ pgnEl.addEventListener("click", (e) => {
     lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
 
     sync({ save: false });
+});
+
+document.addEventListener("keydown", (e) => {
+    // Nicht abfangen, wenn man gerade tippt
+    const tag = document.activeElement?.tagName;
+    const isTyping = tag === "INPUT" || tag === "TEXTAREA";
+
+    if (isTyping) return;
+
+    if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPrevPly();
+    } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goNextPly();
+    }
 });
 
 
