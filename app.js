@@ -1,11 +1,14 @@
 import { Chessground } from "https://esm.sh/chessground@9.2.1";
 import { Chess } from "https://esm.sh/chess.js@1.0.0";
 
+
+
 const boardEl = document.getElementById("board");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetBtn = document.getElementById("resetBtn");
 const flipBtn = document.getElementById("flipBtn");
+const copyPgnBtn = document.getElementById("copyPgnBtn");
 const lichessBtn = document.getElementById("lichessBtn");
 
 const pgnEl = document.getElementById("pgn");
@@ -386,6 +389,21 @@ resetBtn.addEventListener("click", () => {
 lichessBtn.addEventListener("click", () => {
     const url = lichessAnalysisUrlFromFen(game.fen());
     window.open(url, "_blank", "noopener,noreferrer");
+});
+
+copyPgnBtn.addEventListener("click", async () => {
+    try {
+        const pgn = game.pgn(); // chess.js erzeugt PGN aus der aktuellen Partie
+        await navigator.clipboard.writeText(pgn);
+
+        // kleines visuelles Feedback
+        copyPgnBtn.textContent = "✓";
+        setTimeout(() => (copyPgnBtn.textContent = "⎘"), 800);
+    } catch (e) {
+        // Fallback (wenn Clipboard API blockiert ist)
+        const pgn = game.pgn();
+        window.prompt("PGN kopieren (Strg+C):", pgn);
+    }
 });
 
 flipBtn.addEventListener("click", () => {
