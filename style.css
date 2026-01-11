@@ -2,7 +2,7 @@
    BlunderLab – Style (mobile first)
    - Layout (Board + Controls + Inputs)
    - Chessground: Lichess-like board colors
-   - Promotion highlight via Chessground highlight.custom (square.promo)
+   - Promotion highlight via highlight.custom -> square.promo
    - PGN clickable line
    ========================================================= */
 
@@ -10,28 +10,27 @@
 :root {
     --pad: 12px;
 
-    /* Board max size relative to viewport; uses vmin so it grows in landscape too */
+    /* Board max size relative to viewport */
     --board-max: 92vmin;
 
     /* Lichess board colors */
     --lichess-light: #f0d9b5;
-    --lichess-dark: #b58863;
+    --lichess-dark:  #b58863;
 
-    /* Promo highlight fill (semi transparent grey) */
-    --promo-fill: rgba(0, 0, 0, 0.18);
+    /* Promotion square fill (semi transparent grey) */
+    --promo-fill: lightgray;
+
+    /* Promo dimmer (board overlay) */
+    --promo-dim: rgba(0, 0, 0, 0.45);
 }
 
 /* Landscape tweak */
 @media (orientation: landscape) {
-    :root {
-        --board-max: 90vmin;
-    }
+    :root { --board-max: 90vmin; }
 }
 
 /* Global box sizing */
-*, *::before, *::after {
-    box-sizing: border-box;
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 /* Prevent 1–2px horizontal overflow on some mobile browsers */
 html, body {
@@ -60,14 +59,13 @@ body {
     font-size: 22px;
 }
 
-/* Board wrapper (the div you pass to Chessground) */
+/* ---------- Board + Controls ---------- */
 .board {
     width: min(100%, var(--board-max));
     aspect-ratio: 1 / 1;
     margin: 0 auto;
 }
 
-/* Controls row */
 .controls {
     width: min(100%, var(--board-max));
     display: flex;
@@ -82,7 +80,7 @@ body {
     width: 52px;
     height: 52px;
     border-radius: 14px;
-    border: 1px solid rgba(0, 0, 0, .15);
+    border: 1px solid rgba(0, 0, 0, 0.15);
     background: #fff;
     font-size: 22px;
     line-height: 1;
@@ -95,14 +93,14 @@ body {
     cursor: not-allowed;
 }
 
-/* ---------- Inputs ---------- */
+/* ---------- FEN Input ---------- */
 #fenLine {
     display: block;
-    width: min(100%, var(--board-max)); /* avoid 100vw (can cause tiny overflow) */
+    width: min(100%, var(--board-max)); /* avoid 100vw */
     padding: 10px 12px;
     margin: 0 auto;
     border-radius: 12px;
-    border: 1px solid rgba(0, 0, 0, .15);
+    border: 1px solid rgba(0, 0, 0, 0.15);
     background: #fff;
     font-size: 13px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -113,8 +111,7 @@ body {
     background: #fff5f6;
 }
 
-/* ---------- Chessground: board background (Lichess-like checkered) ---------- */
-/* We override theme backgrounds by drawing our own crisp SVG pattern. */
+/* ---------- Chessground: Board background (Lichess-like checkered) ---------- */
 cg-board {
     background-color: var(--lichess-light) !important;
     background-image: url("data:image/svg+xml;utf8,\
@@ -132,70 +129,70 @@ cg-board {
 }
 
 /* ---------- Chessground: Coordinates (ranks on the right) ---------- */
-/* Hide the "left" ranks if present, and position ranks on the right */
-.cg-wrap coords.ranks.left {
-    display: none !important;
-}
+.cg-wrap coords.ranks.left { display: none !important; }
 
 .cg-wrap coords.ranks {
     left: auto !important;
-    right: -4px !important; /* small visual tweak; set to 0 if you want strict alignment */
-    align-items: flex-start;
+    right: -4px !important;   /* tweak; set to 0 if you want strict alignment */
     top: -20px;
+    align-items: flex-start;
 }
 
 /* =========================================================
-   Promotion: Fokus im Board
-   - Board wird leicht abgedunkelt
-   - Promo-Felder bekommen graue Füllung + Puls
+   Promotion focus
+   - Uses a real DOM element (.promo-dimmer) inside .cg-wrap
+   - Promo squares get fill + pulsing ring (square.promo)
    ========================================================= */
 
-/* --- Promotion Fokus (ohne Fade) --- Wir dimmen das Board über ein echtes Element (.promo-dimmer) und setzen die 4 Promo-Felder darüber. */
-.cg-wrap {
-    position: relative;
-}
+.cg-wrap { position: relative; }
 
+/* Dimmer layer (must exist in DOM) */
 .cg-wrap .promo-dimmer {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--promo-dim);
     opacity: 0;
     pointer-events: none;
     transition: opacity 120ms ease;
     z-index: 5;
 }
 
-.cg-wrap.promo-active .promo-dimmer {
-    opacity: 1;
-}
+.cg-wrap.promo-active .promo-dimmer { opacity: 1; }
 
-/* Promo-Felder dezent grau "aufleuchten" lassen */
-.cg-wrap square.promo {
-    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.65), inset 0 0 0 6px rgba(0, 0, 0, 0.28);
-    animation: promoPulse 1.2s ease-in-out infinite;
-    background: lightgray;
-}
-
+/* Optional: slightly dull the board colors during promotion */
 .cg-wrap.promo-active cg-board {
     filter: grayscale(0.35) brightness(0.85);
 }
 
+/* Promo squares: fill + pulse ring */
+.cg-wrap square.promo {
+    background: var(--promo-fill);
+    box-shadow:
+            inset 0 0 0 3px rgba(255, 255, 255, 0.65),
+            inset 0 0 0 6px rgba(0, 0, 0, 0.28);
+    animation: promoPulse 1.2s ease-in-out infinite;
+}
+
 @keyframes promoPulse {
     0% {
-        box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55), inset 0 0 0 6px rgba(0, 0, 0, 0.22);
+        box-shadow:
+                inset 0 0 0 3px rgba(255, 255, 255, 0.55),
+                inset 0 0 0 6px rgba(0, 0, 0, 0.22);
     }
     50% {
-        box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.90), inset 0 0 0 6px rgba(0, 0, 0, 0.38);
+        box-shadow:
+                inset 0 0 0 3px rgba(255, 255, 255, 0.90),
+                inset 0 0 0 6px rgba(0, 0, 0, 0.38);
     }
     100% {
-        box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55), inset 0 0 0 6px rgba(0, 0, 0, 0.22);
+        box-shadow:
+                inset 0 0 0 3px rgba(255, 255, 255, 0.55),
+                inset 0 0 0 6px rgba(0, 0, 0, 0.22);
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .cg-wrap square.promo {
-        animation: none;
-    }
+    .cg-wrap square.promo { animation: none; }
 }
 
 /* ---------- PGN line ---------- */
@@ -208,7 +205,7 @@ cg-board {
     width: 100%;
     padding: 10px 12px;
     border-radius: 12px;
-    border: 1px solid rgba(0, 0, 0, .12);
+    border: 1px solid rgba(0, 0, 0, 0.12);
     background: #fff;
     font-size: 13px;
     line-height: 1.6;
@@ -216,24 +213,16 @@ cg-board {
     overflow-wrap: anywhere;
 }
 
-#pgn .num {
-    opacity: 0.55;
-    margin-right: 4px;
-}
+#pgn .num { opacity: 0.55; margin-right: 4px; }
 
 #pgn .mv {
     display: inline-block;
     padding: 2px 6px;
-    margin: 2px 2px;
+    margin: 2px;
     border-radius: 8px;
     cursor: pointer;
     user-select: none;
 }
 
-#pgn .mv:hover {
-    background: rgba(0, 0, 0, .06);
-}
-
-#pgn .mv.active {
-    background: rgba(0, 0, 0, .12);
-}
+#pgn .mv:hover  { background: rgba(0, 0, 0, 0.06); }
+#pgn .mv.active { background: rgba(0, 0, 0, 0.12); }
