@@ -77,3 +77,97 @@ describe("buildPgnHtml", () => {
         expect(buildPgnHtml([], 0)).toContain("—");
     });
 });
+describe("more edge cases", () => {
+    describe("lichessAnalysisUrlFromFen edge cases", () => {
+        it("trims and normalizes whitespace", () => {
+            const fen = "  rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR   b   KQkq   -   0   1  ";
+            const url = lichessAnalysisUrlFromFen(fen, "white");
+            expect(url).toContain("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR_b_KQkq_-_0_1");
+        });
+
+        it("defaults halfmove/fullmove if missing", () => {
+            const fen = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -";
+            const url = lichessAnalysisUrlFromFen(fen, "white");
+            expect(url).toContain("_-_0_1");
+        });
+
+        it("supports orientation black", () => {
+            const fen = "8/8/8/8/8/8/8/8 w - - 0 1";
+            const url = lichessAnalysisUrlFromFen(fen, "black");
+            expect(url).toContain("?color=black");
+        });
+    });
+
+    describe("promoSquares edge cases", () => {
+        it("works for a-file and h-file", () => {
+            expect(promoSquares("a8", "w")).toEqual(["a8", "a7", "a6", "a5"]);
+            expect(promoSquares("h1", "b")).toEqual(["h1", "h2", "h3", "h4"]);
+        });
+    });
+
+    describe("nextViewPly edge cases", () => {
+        it("lineLength=0 always returns 0", () => {
+            expect(nextViewPly(0, 1, 0)).toBe(0);
+            expect(nextViewPly(5, -3, 0)).toBe(0);
+        });
+
+        it("clamps huge deltas", () => {
+            expect(nextViewPly(3, 999, 10)).toBe(10);
+            expect(nextViewPly(3, -999, 10)).toBe(0);
+        });
+
+        it("recovers from out-of-range viewPly", () => {
+            expect(nextViewPly(-5, 0, 10)).toBe(0);
+            expect(nextViewPly(999, 0, 10)).toBe(10);
+        });
+    });
+
+    describe("branchLineIfNeeded edge cases", () => {
+        it("negative viewPly clamps to 0 and cuts", () => {
+            const line = [1,2,3];
+            const r = branchLineIfNeeded(line, -10);
+            expect(r.cut).toBe(true);
+            expect(r.newLine).toEqual([]);
+            expect(r.basePly).toBe(0);
+        });
+
+        it("too large viewPly clamps to len and does not cut", () => {
+            const line = ["a","b","c"];
+            const r = branchLineIfNeeded(line, 999);
+            expect(r.cut).toBe(false);
+            expect(r.newLine).toBe(line);
+            expect(r.basePly).toBe(3);
+        });
+    });
+
+    describe("buildPgnHtml edge cases", () => {
+        it("viewPly=0 highlights nothing", () => {
+            const line = [{ san: "d4" }, { san: "d5" }];
+            const html = buildPgnHtml(line, 0);
+            expect(html).not.toContain("mv active");
+        });
+
+        it("viewPly=len highlights last move", () => {
+            const line = [{ san: "d4" }, { san: "d5" }, { san: "c4" }];
+            const html = buildPgnHtml(line, 3);
+            expect(html).toContain('data-ply="3"');
+            expect(html).toContain("mv active");
+        });
+
+        it("adds correct move numbers", () => {
+            const line = [{ san: "d4" }, { san: "d5" }, { san: "c4" }, { san: "e6" }];
+            const html = buildPgnHtml(line, 4);
+            expect(html).toContain('class="num">1.</span>');
+            expect(html).toContain('class="num">2.</span>');
+        });
+
+        it("keeps SAN symbols and escapes html", () => {
+            const line = [{ san: "exd8=Q+" }, { san: "O-O" }, { san: "a&b" }, { san: "<x>" }];
+            const html = buildPgnHtml(line, 4);
+            expect(html).toContain("exd8=Q+");
+            expect(html).toContain("O-O");
+            expect(html).toContain("a&amp;b");
+            expect(html).toContain("&lt;x&gt;");
+        });
+    });
+});

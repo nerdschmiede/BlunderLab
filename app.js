@@ -389,3 +389,5 @@ fenLine.addEventListener("blur", applyFenFromInput);
     // Always show end of line on load
     goToPly(fullLine.length, { save: false });
 })();
+
+
