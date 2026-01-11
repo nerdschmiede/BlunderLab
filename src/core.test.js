@@ -171,3 +171,73 @@ describe("more edge cases", () => {
         });
     });
 });
+
+import {
+    clampPly,
+    computeLastMove,
+    applyJump,
+    applyCommit,
+    applyEditInPast
+} from "./core.js";
+
+describe("state helpers (cursor/lastMove) - waterproofing", () => {
+    const line = [
+        { from: "e2", to: "e4", san: "e4" },
+        { from: "e7", to: "e5", san: "e5" },
+        { from: "g1", to: "f3", san: "Nf3" },
+    ];
+
+    it("clampPly clamps correctly", () => {
+        expect(clampPly(-10, 3)).toBe(0);
+        expect(clampPly(0, 3)).toBe(0);
+        expect(clampPly(2, 3)).toBe(2);
+        expect(clampPly(999, 3)).toBe(3);
+    });
+
+    it("computeLastMove is null at ply 0", () => {
+        expect(computeLastMove(line, 0)).toBe(null);
+    });
+
+    it("computeLastMove matches cursor position", () => {
+        expect(computeLastMove(line, 1)).toEqual(["e2", "e4"]);
+        expect(computeLastMove(line, 2)).toEqual(["e7", "e5"]);
+        expect(computeLastMove(line, 3)).toEqual(["g1", "f3"]);
+    });
+
+    it("applyJump clamps to range", () => {
+        expect(applyJump(3, -1, 3)).toBe(0);
+        expect(applyJump(3, 999, 3)).toBe(3);
+        expect(applyJump(3, 2, 3)).toBe(2);
+    });
+
+    it("applyCommit sends cursor to end and lastMove to last", () => {
+        const { viewPly, lastMove } = applyCommit(line);
+        expect(viewPly).toBe(3);
+        expect(lastMove).toEqual(["g1", "f3"]);
+    });
+
+    it("applyCommit handles empty line", () => {
+        const { viewPly, lastMove } = applyCommit([]);
+        expect(viewPly).toBe(0);
+        expect(lastMove).toBe(null);
+    });
+
+    it("applyEditInPast cuts future and places cursor at new end", () => {
+        const r = applyEditInPast(line, 2);
+        expect(r.line.length).toBe(2);
+        expect(r.viewPly).toBe(2);
+        expect(r.line[1]).toMatchObject({ from: "e7", to: "e5" });
+    });
+
+    it("applyEditInPast with view at end keeps line", () => {
+        const r = applyEditInPast(line, 3);
+        expect(r.line).toEqual(line);
+        expect(r.viewPly).toBe(3);
+    });
+
+    it("applyEditInPast with negative clamps to 0 -> empty", () => {
+        const r = applyEditInPast(line, -5);
+        expect(r.line).toEqual([]);
+        expect(r.viewPly).toBe(0);
+    });
+});

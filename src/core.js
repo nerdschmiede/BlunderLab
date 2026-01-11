@@ -108,3 +108,64 @@ function escapeHtml(s) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
 }
+
+/**
+ * Clamp cursor to [0..len]
+ * @param {number} viewPly
+ * @param {number} len
+ */
+export function clampPly(viewPly, len) {
+    return Math.max(0, Math.min(len, viewPly));
+}
+
+/**
+ * lastMove from the cursor position:
+ * - viewPly=0 -> null
+ * - viewPly=k -> move at index k-1 (from/to)
+ *
+ * @param {{from:string,to:string}[]} fullLine
+ * @param {number} viewPly
+ * @returns {[string,string] | null}
+ */
+export function computeLastMove(fullLine, viewPly) {
+    const ply = clampPly(viewPly, fullLine.length);
+    if (ply <= 0) return null;
+    const m = fullLine[ply - 1];
+    return [m.from, m.to];
+}
+
+/**
+ * Jump to ply (e.g. click in PGN). Keeps master line unchanged.
+ * @param {number} viewPly
+ * @param {number} targetPly
+ * @param {number} len
+ */
+export function applyJump(viewPly, targetPly, len) {
+    return clampPly(targetPly, len);
+}
+
+/**
+ * After a new move is made (on current game), we always "commit":
+ * - cursor goes to end
+ * - lastMove becomes the last move (if any)
+ *
+ * @param {{from:string,to:string}[]} newFullLine
+ * @returns {{viewPly:number, lastMove:[string,string]|null}}
+ */
+export function applyCommit(newFullLine) {
+    const viewPly = newFullLine.length;
+    return { viewPly, lastMove: computeLastMove(newFullLine, viewPly) };
+}
+
+/**
+ * When user is browsing the past and wants to edit:
+ * cut future and return the truncated line + new cursor.
+ *
+ * @param {{from:string,to:string}[]} fullLine
+ * @param {number} viewPly
+ * @returns {{line:{from:string,to:string}[], viewPly:number}}
+ */
+export function applyEditInPast(fullLine, viewPly) {
+    const r = branchLineIfNeeded(fullLine, viewPly);
+    return { line: r.newLine, viewPly: r.basePly };
+}
