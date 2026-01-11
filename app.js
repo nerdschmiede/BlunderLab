@@ -25,6 +25,7 @@ let fullPgn = "";       // gespeichertes PGN der vollen Line
 
 // Promotion-Auswahl auf dem Brett (Lichess-Style)
 let promoPick = null; // { from, to, chessColor, squares }
+let promoCustom = new Map(); // Map<Key, string>
 
 function autoSavePgn() {
     try {
@@ -58,7 +59,6 @@ function updateButtons() {
     undoBtn.disabled = viewPly <= 0;
     redoBtn.disabled = viewPly >= fullLine.length;
 }
-
 
 function isPromotionMove(from, to) {
     const p = game.get(from);
@@ -129,11 +129,12 @@ function showPromoChoices(from, to) {
     );
 
     // UI: dimmen + Felder markieren
-    const wrap = boardEl.querySelector(".cg-wrap");
-    if (wrap) {
-        wrap.classList.add("promo-active");
-        squares.forEach((sq) => wrap.querySelector(`square[data-key="${sq}"]`)?.classList.add("promo"));
-    }
+    promoCustom = new Map(squares.map(sq => [sq, "promo"]));
+
+    ground.set({
+        highlight: { lastMove: true, check: true, custom: promoCustom }
+    });
+
 
     // während Promotion keine normalen Züge (wir lassen select() die Wahl übernehmen)
     ground.set({
@@ -156,11 +157,11 @@ function clearPromoChoices() {
         ])
     );
 
-    const wrap = boardEl.querySelector(".cg-wrap");
-    if (wrap) {
-        wrap.classList.remove("promo-active");
-        wrap.querySelectorAll("square.promo").forEach((el) => el.classList.remove("promo"));
-    }
+    promoCustom = new Map();
+
+    ground.set({
+        highlight: { lastMove: true, check: true, custom: promoCustom }
+    });
 
     promoPick = null;
 }
@@ -208,7 +209,7 @@ function sync({ save = true } = {}) {
         turnColor: game.turn() === "w" ? "white" : "black",
 
         check: checkColor,
-        highlight: { check: true, lastMove: true },
+        highlight: { check: true, lastMove: true, custom: promoCustom },
         lastMove: lastMove ?? undefined,
     });
 
