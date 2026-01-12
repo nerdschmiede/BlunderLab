@@ -5,16 +5,20 @@ import {
     promoSquares,
     buildPgnHtml,
     nextViewPly,
-    branchLineIfNeeded
+    // NEW state helpers:
+    computeLastMove,
+    applyEditInPast,
+    applyCommit,
+    applyJump,
+    clampPly
 } from "./src/core.js";
 
 /* =========================================================
-   BlunderLab – app.js (refactored)
-   - Master line: fullLine (verbose moves)
-   - Cursor: viewPly (0..fullLine.length) – timeline navigation only
-   - Branching: when editing in the past, cut future and continue
-   - Promotion: lichess style squares with highlight.custom (square.promo)
-   - Auto-save PGN at end of line only
+   BlunderLab – app.js (refactored to core state helpers)
+   - master line: fullLine (verbose moves)
+   - cursor: viewPly (0..fullLine.length)
+   - lastMove computed via core (single truth)
+   - branching in past via core applyEditInPast()
    ========================================================= */
 
 const STORAGE_PGN_KEY = "blunderlab.pgn";
@@ -36,15 +40,14 @@ const game = new Chess();
 let orientation = localStorage.getItem(STORAGE_ORIENTATION_KEY) || "white";
 
 let fullLine = [];   // verbose moves (master line)
-let viewPly = 0;     // cursor in half-moves: 0..fullLine.length
-let fullPgn = "";    // pgn of master line
-let lastMove = null; // [from,to] or null
+let viewPly = 0;     // 0..fullLine.length
+let fullPgn = "";    // PGN of master line
 
-/* Promotion state */
+/* Promotion */
 let promoPick = null;        // { from, to, squares } | null
 let promoCustom = new Map(); // Map<square, "promo">
 
-/* ---------- Helpers ---------- */
+/* ---------- Persistence ---------- */
 function autoSavePgn() {
     try {
         localStorage.setItem(STORAGE_PGN_KEY, fullPgn);
@@ -53,6 +56,7 @@ function autoSavePgn() {
     }
 }
 
+/* ---------- Chessground helpers ---------- */
 function calcDests(chess) {
     const dests = new Map();
     const moves = chess.moves({ verbose: true });
@@ -64,30 +68,12 @@ function calcDests(chess) {
 }
 
 function setGameToPly(ply) {
+    const p = clampPly(ply, fullLine.length);
     game.reset();
-    for (let i = 0; i < ply; i++) {
+    for (let i = 0; i < p; i++) {
         const m = fullLine[i];
         game.move({ from: m.from, to: m.to, promotion: m.promotion });
     }
-}
-
-function commitFromGameToMasterLine() {
-    fullLine = game.history({ verbose: true });
-    fullPgn = game.pgn();
-    viewPly = fullLine.length;
-}
-
-function updateLastMoveFromView() {
-    lastMove = viewPly > 0 ? [fullLine[viewPly - 1].from, fullLine[viewPly - 1].to] : null;
-}
-
-function updateButtons() {
-    undoBtn.disabled = viewPly <= 0;
-    redoBtn.disabled = viewPly >= fullLine.length;
-}
-
-function renderPgn() {
-    pgnEl.innerHTML = buildPgnHtml(fullLine, viewPly);
 }
 
 function isPromotionMove(from, to) {
@@ -120,7 +106,6 @@ function enterPromotion(from, to) {
 
     const c = cgColor(chessColor);
 
-    // Put 4 choice pieces on board squares
     ground.setPieces(new Map([
         [squares[0], { role: "queen",  color: c }],
         [squares[1], { role: "knight", color: c }],
@@ -128,10 +113,8 @@ function enterPromotion(from, to) {
         [squares[3], { role: "bishop", color: c }],
     ]));
 
-    // Highlight squares via highlight.custom => CSS square.promo
     promoCustom = new Map(squares.map(sq => [sq, "promo"]));
 
-    // Disable normal movement while choosing promotion
     ground.set({
         movable: { free: false, color: undefined, dests: new Map() },
         highlight: { check: true, lastMove: true, custom: promoCustom },
@@ -144,8 +127,6 @@ function exitPromotion() {
     if (!promoPick) return;
 
     const [a, b, c, d] = promoPick.squares;
-
-    // Remove temp choice pieces
     ground.setPieces(new Map([[a, null], [b, null], [c, null], [d, null]]));
 
     promoPick = null;
@@ -154,7 +135,21 @@ function exitPromotion() {
     boardEl.querySelector(".cg-wrap")?.classList.remove("promo-active");
 }
 
-/* ---------- Sync UI from state ---------- */
+/* ---------- UI rendering ---------- */
+function updateButtons() {
+    undoBtn.disabled = viewPly <= 0;
+    redoBtn.disabled = viewPly >= fullLine.length;
+}
+
+function renderPgn() {
+    pgnEl.innerHTML = buildPgnHtml(fullLine, viewPly);
+}
+
+/* Single source of truth for lastMove */
+function getLastMove() {
+    return computeLastMove(fullLine, viewPly);
+}
+
 function sync({ save = true } = {}) {
     const turn = game.turn() === "w" ? "white" : "black";
     const inCheck = game.inCheck?.() ?? false;
@@ -167,7 +162,7 @@ function sync({ save = true } = {}) {
         movable: { free: false, color: turn, dests: calcDests(game) },
         check: checkColor,
         highlight: { check: true, lastMove: true, custom: promoCustom },
-        lastMove: lastMove ?? undefined,
+        lastMove: getLastMove() ?? undefined,
     });
 
     fenLine.value = game.fen();
@@ -176,15 +171,13 @@ function sync({ save = true } = {}) {
     renderPgn();
     updateButtons();
 
-    // Save only when user is at end-of-line (live position)
     if (save && viewPly === fullLine.length) autoSavePgn();
 }
 
 /* ---------- Timeline navigation ---------- */
 function goToPly(ply, { save = false } = {}) {
-    viewPly = Math.max(0, Math.min(fullLine.length, ply));
+    viewPly = clampPly(ply, fullLine.length);
     setGameToPly(viewPly);
-    updateLastMoveFromView();
     sync({ save });
 }
 
@@ -193,6 +186,14 @@ function goPrevPly() {
 }
 function goNextPly() {
     goToPly(nextViewPly(viewPly, +1, fullLine.length));
+}
+
+/* ---------- Master line commit from game ---------- */
+function commitFromGame() {
+    fullLine = game.history({ verbose: true });
+    fullPgn = game.pgn();
+    const committed = applyCommit(fullLine);
+    viewPly = committed.viewPly;
 }
 
 /* ---------- FEN input ---------- */
@@ -226,11 +227,10 @@ function applyFenFromInput() {
     }
 
     fenLine.classList.remove("invalid");
-    lastMove = null;
 
-    // A loaded FEN has no move history => master line becomes empty at this position
-    commitFromGameToMasterLine();
-    sync({ save: true });
+    // Loaded FEN has no history: master line becomes empty at that position
+    commitFromGame();
+    goToPly(fullLine.length, { save: true });
 }
 
 /* =========================================================
@@ -240,24 +240,19 @@ const ground = Chessground(boardEl, {
     fen: game.fen(),
     orientation,
     highlight: { check: true, lastMove: true },
-    movable: {
-        free: false,
-        color: game.turn() === "w" ? "white" : "black",
-        dests: calcDests(game),
-    },
+    movable: { free: false, color: game.turn() === "w" ? "white" : "black", dests: calcDests(game) },
     events: {
         move: (from, to) => {
             if (promoPick) return;
 
-            // If user is in the past: branch (cut future) and replay truncated line into game
-            const br = branchLineIfNeeded(fullLine, viewPly);
-            if (br.cut) {
-                fullLine = br.newLine;
-                viewPly = br.basePly;
+            // If in the past: cut future and replay truncated line before applying new move
+            const edited = applyEditInPast(fullLine, viewPly);
+            if (edited.line.length !== fullLine.length) {
+                fullLine = edited.line;
+                viewPly = edited.viewPly;
                 setGameToPly(viewPly);
             }
 
-            // Promotion?
             if (isPromotionMove(from, to)) {
                 enterPromotion(from, to);
                 return;
@@ -266,9 +261,7 @@ const ground = Chessground(boardEl, {
             const mv = game.move({ from, to });
             if (!mv) { sync({ save: false }); return; }
 
-            lastMove = [mv.from, mv.to];
-
-            commitFromGameToMasterLine();
+            commitFromGame();
             sync({ save: true });
         },
 
@@ -290,9 +283,7 @@ const ground = Chessground(boardEl, {
 
             if (!mv) { sync({ save: false }); return; }
 
-            lastMove = [mv.from, mv.to];
-
-            commitFromGameToMasterLine();
+            commitFromGame();
             sync({ save: true });
         },
     },
@@ -304,33 +295,28 @@ requestAnimationFrame(ensurePromoDimmer);
    Event listeners
    ========================================================= */
 
-// Timeline buttons
+// Buttons
 undoBtn.addEventListener("click", goPrevPly);
 redoBtn.addEventListener("click", goNextPly);
 
-// Reset (hard reset = clears master line)
 resetBtn.addEventListener("click", () => {
     exitPromotion();
     game.reset();
-    lastMove = null;
-    commitFromGameToMasterLine();
+    commitFromGame();
     sync({ save: true });
 });
 
-// Flip board
 flipBtn.addEventListener("click", () => {
     orientation = orientation === "white" ? "black" : "white";
     localStorage.setItem(STORAGE_ORIENTATION_KEY, orientation);
     sync({ save: false });
 });
 
-// Lichess analysis
 lichessBtn.addEventListener("click", () => {
     const url = lichessAnalysisUrlFromFen(game.fen(), orientation);
     window.open(url, "_blank", "noopener,noreferrer");
 });
 
-// Copy PGN (always master line)
 copyPgnBtn.addEventListener("click", async () => {
     const pgn = fullPgn || game.pgn();
     try {
@@ -342,15 +328,16 @@ copyPgnBtn.addEventListener("click", async () => {
     }
 });
 
-// Click in PGN -> jump
+// PGN click -> jump
 pgnEl.addEventListener("click", (e) => {
     const mv = e.target.closest(".mv");
     if (!mv) return;
-    const ply = parseInt(mv.dataset.ply, 10);
-    goToPly(ply);
+    const target = parseInt(mv.dataset.ply, 10);
+    const next = applyJump(viewPly, target, fullLine.length);
+    goToPly(next, { save: false });
 });
 
-// Keyboard arrows (skip if typing)
+// Keyboard arrows
 document.addEventListener("keydown", (e) => {
     const tag = document.activeElement?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -359,7 +346,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowRight") { e.preventDefault(); goNextPly(); }
 });
 
-// FEN listeners
+// FEN
 fenLine.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
         e.preventDefault();
@@ -383,11 +370,6 @@ fenLine.addEventListener("blur", applyFenFromInput);
         }
     }
 
-    commitFromGameToMasterLine();
-    updateLastMoveFromView();
-
-    // Always show end of line on load
+    commitFromGame();
     goToPly(fullLine.length, { save: false });
 })();
-
-
