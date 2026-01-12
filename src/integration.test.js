@@ -309,4 +309,50 @@ describe("Integration: core helpers + chess.js (no UI)", () => {
         expect(s.viewPly).toBe(2);
     });
 
+    it("goToPly is idempotent (calling twice does not change state)", () => {
+        const h = createHarness();
+        h.makeMove({ from: "d2", to: "d4" });
+        h.makeMove({ from: "d7", to: "d5" });
+
+        h.goToPly(1);
+        const s1 = h.state();
+
+        h.goToPly(1);
+        const s2 = h.state();
+
+        expect(s2).toEqual(s1);
+    });
+
+    it("PGN roundtrip is stable", () => {
+        const h = createHarness();
+        h.makeMove({ from: "d2", to: "d4" });
+        h.makeMove({ from: "d7", to: "d5" });
+        h.makeMove({ from: "c2", to: "c4" });
+
+        const pgn1 = h.state().fullPgn;
+
+        const h2 = createHarness();
+        h2.loadPgn(pgn1);
+        const pgn2 = h2.state().fullPgn;
+
+        expect(pgn2).toBe(pgn1);
+    });
+
+
+    it("loadFen wipes history even after branching", () => {
+        const h = createHarness();
+
+        h.makeMove({ from: "d2", to: "d4" });
+        h.makeMove({ from: "d7", to: "d5" });
+        h.goToPly(1);
+        h.makeMove({ from: "c2", to: "c4" }); // branch
+
+        h.loadFen("8/8/8/8/8/8/8/k6K w - - 0 1");
+
+        const s = h.state();
+        expect(s.fullLine.length).toBe(0);
+        expect(s.viewPly).toBe(0);
+    });
+
 });
+
