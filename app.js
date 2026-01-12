@@ -1,5 +1,6 @@
-import { Chessground } from "https://esm.sh/chessground@9.2.1";
-import { Chess } from "https://esm.sh/chess.js@1.0.0";
+import { Chessground } from "chessground";
+import { Chess } from "chess.js";
+
 import {
     lichessAnalysisUrlFromFen,
     promoSquares,
@@ -12,6 +13,7 @@ import {
     applyJump,
     clampPly
 } from "./src/core.js";
+
 
 /* =========================================================
    BlunderLab – app.js (refactored to core state helpers)
