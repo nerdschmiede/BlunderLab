@@ -79,9 +79,27 @@ function createHarness() {
     }
 
     function loadPgn(pgn) {
-        game.loadPgn(pgn);
+        // Snapshot the *entire* game via its own PGN export,
+        // because restoring only by FEN can change PGN headers/SetUp behavior.
+        const beforePgn = game.pgn();
+        const beforeViewPly = viewPly;
+
+        try {
+            game.loadPgn(pgn);
+        } catch {
+            // restore from PGN snapshot
+            game.reset();
+            game.loadPgn(beforePgn);
+
+            commitFromGame();
+            goToPly(beforeViewPly);
+            return false;
+        }
+
         commitFromGame();
+        return true;
     }
+
 
     function loadFen(fen) {
         game.load(fen);
@@ -353,6 +371,37 @@ describe("Integration: core helpers + chess.js (no UI)", () => {
         expect(s.fullLine.length).toBe(0);
         expect(s.viewPly).toBe(0);
     });
+
+    it("importing valid PGN replaces state and moves cursor to end", () => {
+        const h = createHarness();
+
+        h.makeMove({ from: "d2", to: "d4" });
+        h.makeMove({ from: "d7", to: "d5" });
+
+        const pgn = `
+    1. e4 e5
+    2. Nf3 Nc6
+  `;
+
+        h.loadPgn(pgn);
+
+        const s = h.state();
+        expect(s.fullLine.map(m => m.san)).toEqual(["e4", "e5", "Nf3", "Nc6"]);
+        expect(s.viewPly).toBe(4);
+    });
+
+    it("importing invalid PGN does not mutate state", () => {
+        const h = createHarness();
+
+        h.makeMove({ from: "d2", to: "d4" });
+        const before = h.state();
+
+        h.loadPgn("this is not a pgn");
+
+        const after = h.state();
+        expect(after).toEqual(before);
+    });
+
 
 });
 

@@ -36,6 +36,8 @@ const copyPgnBtn = document.getElementById("copyPgnBtn");
 const lichessBtn = document.getElementById("lichessBtn");
 const fenLine = document.getElementById("fenLine");
 const pgnEl = document.getElementById("pgn");
+const pgnInput = document.getElementById("pgnInput");
+const btnImportPgn = document.getElementById("btnImportPgn");
 
 /* ---------- Game state ---------- */
 const game = new Chess();
@@ -48,6 +50,7 @@ let fullPgn = "";    // PGN of master line
 /* Promotion */
 let promoPick = null;        // { from, to, squares } | null
 let promoCustom = new Map(); // Map<square, "promo">
+
 
 /* ---------- Persistence ---------- */
 function autoSavePgn() {
@@ -87,6 +90,32 @@ function isPromotionMove(from, to) {
 
 function cgColor(chessColor) {
     return chessColor === "w" ? "white" : "black";
+}
+
+function applyPgnFromInput(pgnText) {
+    const text = (pgnText ?? "").trim();
+    if (!text) return false;
+
+    // Snapshot current state so a bad PGN paste can't break anything
+    const beforePgn = game.pgn();
+    const beforeView = viewPly;
+
+    try {
+        // Replace state
+        game.reset();
+        game.loadPgn(text);
+    } catch (e) {
+        // Restore exactly
+        game.reset();
+        try { game.loadPgn(beforePgn); } catch {}
+        setGameToPly(beforeView);
+        sync({ save: true });
+        return false;
+    }
+
+    commitFromGame();
+    goToPly(fullLine.length, { save: true });
+    return true;
 }
 
 /* ---------- Promotion UI ---------- */
@@ -357,6 +386,12 @@ fenLine.addEventListener("keydown", (e) => {
     }
 });
 fenLine.addEventListener("blur", applyFenFromInput);
+
+btnImportPgn?.addEventListener("click", () => {
+    exitPromotion?.(); // falls du exitPromotion hast; sonst weglassen
+    const ok = applyPgnFromInput(pgnInput.value);
+    pgnInput.classList.toggle("invalid", !ok);
+});
 
 /* =========================================================
    Boot: load saved PGN and start at end

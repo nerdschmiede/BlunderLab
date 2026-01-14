@@ -93,9 +93,17 @@ body {
     opacity: 0.45;
     cursor: not-allowed;
 }
+.icon-btn.text-btn {
+    padding: 0 0.9rem;
+    height: 40px;
+    font-size: 0.9rem;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.15)
+}
+
 
 /* ---------- FEN Input ---------- */
-#fenLine {
+.input-box {
     display: block;
     width: min(100%, var(--board-max)); /* avoid 100vw */
     padding: 10px 12px;
@@ -107,7 +115,7 @@ body {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-#fenLine.invalid {
+.input-box.invalid {
     border-color: #b00020;
     background: #fff5f6;
 }
@@ -227,3 +235,5 @@ cg-board {
 
 #pgn .mv:hover  { background: rgba(0, 0, 0, 0.06); }
 #pgn .mv.active { background: rgba(0, 0, 0, 0.12); }
+
+.invalid { outline: 2px solid currentColor; }
