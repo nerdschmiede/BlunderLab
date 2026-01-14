@@ -169,3 +169,7 @@ export function applyEditInPast(fullLine, viewPly) {
     const r = branchLineIfNeeded(fullLine, viewPly);
     return { line: r.newLine, viewPly: r.basePly };
 }
+
+export function pgnHasFenHeader(pgnText) {
+    return /\[FEN\s+"/i.test(String(pgnText ?? ""));
+}

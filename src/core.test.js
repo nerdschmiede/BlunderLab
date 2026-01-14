@@ -6,6 +6,7 @@ import {
     buildPgnHtml,
     nextViewPly,
     branchLineIfNeeded,
+    pgnHasFenHeader
 } from "./core.js";
 
 describe("lichessAnalysisUrlFromFen", () => {
@@ -239,5 +240,31 @@ describe("state helpers (cursor/lastMove) - waterproofing", () => {
         const r = applyEditInPast(line, -5);
         expect(r.line).toEqual([]);
         expect(r.viewPly).toBe(0);
+    });
+});
+
+describe("PGN import guards", () => {
+    it("detects From-Position PGN via [FEN] header (lichess style)", () => {
+        const pgn = `
+[Variant "From Position"]
+[FEN "r1bqkbnr/pppp1ppp/2n5/4P3/8/5N2/PPP1PPPP/RNBQKB1R b KQkq - 2 3"]
+
+3... Qe7 4. Nc3 Nxe5 5. Nd5
+    `.trim();
+
+        expect(pgnHasFenHeader(pgn)).toBe(true);
+    });
+
+    it("does not flag normal PGN without [FEN]", () => {
+        const pgn = `
+1. d4 d5 2. c4 e6 3. Nc3
+    `.trim();
+
+        expect(pgnHasFenHeader(pgn)).toBe(false);
+    });
+
+    it("is case-insensitive and whitespace-tolerant", () => {
+        const pgn = `[fen   "8/8/8/8/8/8/8/k6K w - - 0 1"]\n1. a4`;
+        expect(pgnHasFenHeader(pgn)).toBe(true);
     });
 });

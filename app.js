@@ -11,7 +11,8 @@ import {
     applyEditInPast,
     applyCommit,
     applyJump,
-    clampPly
+    clampPly,
+    pgnHasFenHeader
 } from "./src/core.js";
 
 
@@ -75,11 +76,18 @@ function calcDests(chess) {
 function setGameToPly(ply) {
     const p = clampPly(ply, fullLine.length);
     game.reset();
-    for (let i = 0; i < p; i++) {
-        const m = fullLine[i];
-        game.move({ from: m.from, to: m.to, promotion: m.promotion });
+
+    try {
+        for (let i = 0; i < p; i++) {
+            const m = fullLine[i];
+            game.move({ from: m.from, to: m.to, promotion: m.promotion });
+        }
+    } catch {
+        // Never crash the app on a bad timeline
+        game.reset();
     }
 }
+
 
 function isPromotionMove(from, to) {
     const p = game.get(from);
@@ -96,19 +104,21 @@ function applyPgnFromInput(pgnText) {
     const text = (pgnText ?? "").trim();
     if (!text) return false;
 
+    // Reject "From Position" PGNs (contain a FEN header)
+    if (pgnHasFenHeader(text)) return false;
+
     // Snapshot current state so a bad PGN paste can't break anything
     const beforePgn = game.pgn();
-    const beforeView = viewPly;
 
     try {
         // Replace state
         game.reset();
         game.loadPgn(text);
-    } catch (e) {
-        // Restore exactly
+    } catch {
+        // Restore exactly; keep app state (fullLine/viewPly/fullPgn) unchanged
         game.reset();
         try { game.loadPgn(beforePgn); } catch {}
-        setGameToPly(beforeView);
+        setGameToPly(viewPly);
         sync({ save: true });
         return false;
     }
@@ -117,6 +127,7 @@ function applyPgnFromInput(pgnText) {
     goToPly(fullLine.length, { save: true });
     return true;
 }
+
 
 /* ---------- Promotion UI ---------- */
 function ensurePromoDimmer() {
@@ -234,21 +245,18 @@ function applyFenFromInput() {
     const fen = fenLine.value.trim().replace(/\s+/g, " ");
     if (!fen) return;
 
-    let ok = true;
+    let ok = false;
+
     try {
-        const r = game.load(fen);
-        if (r === false) ok = false;
-    } catch {
-        ok = false;
-    }
+        game.load(fen);
+        ok = true;
+    } catch {}
 
     if (!ok) {
         try {
-            const r2 = game.load(fen, { sloppy: true });
-            ok = r2 !== false;
-        } catch {
-            ok = false;
-        }
+            game.load(fen, { sloppy: true });
+            ok = true;
+        } catch {}
     }
 
     if (!ok) {
@@ -258,11 +266,10 @@ function applyFenFromInput() {
     }
 
     fenLine.classList.remove("invalid");
-
-    // Loaded FEN has no history: master line becomes empty at that position
     commitFromGame();
     goToPly(fullLine.length, { save: true });
 }
+
 
 /* =========================================================
    Chessground init
