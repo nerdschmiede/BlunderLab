@@ -74,6 +74,8 @@ let promoCustom = new Map(); // Map<square, "promo">
 let studies = [];          // Array<Study>
 let activeStudyId = null;  // string | null
 
+let renamingStudyId = null;
+
 function loadStudiesFromStorage() {
     try {
         const raw = localStorage.getItem(STORAGE_STUDIES_KEY);
@@ -289,6 +291,7 @@ function sync({ save = true } = {}) {
 
 /* --------------Overlay------------------------- */
 
+
 function renderOverlayList() {
     if (!studyListEl) return;
 
@@ -304,20 +307,75 @@ function renderOverlayList() {
         const meta = document.createElement("div");
         meta.className = "study-meta";
 
-        const name = document.createElement("div");
-        name.className = "study-name";
-        name.textContent = s.name;
+        if (renamingStudyId === s.id) {
+            // --- Rename mode ---
+            const input = document.createElement("input");
+            input.className = "study-rename input-box";
+            input.type = "text";
+            input.value = s.name;
 
-        const sub = document.createElement("div");
-        sub.className = "study-sub";
-        sub.textContent = `${s.color === "black" ? "Schwarz" : "Weiß"}${s.id === activeStudyId ? " · aktiv" : ""}`;
+            // Fokus nach dem Render
+            setTimeout(() => input.focus(), 0);
 
-        meta.appendChild(name);
-        meta.appendChild(sub);
+            const commit = () => {
+                const name = input.value.trim();
+                renamingStudyId = null;
+
+                if (!name || name === s.name) {
+                    renderOverlayList();
+                    return;
+                }
+
+                const updated = { ...s, name, updatedAt: Date.now() };
+                studies = upsertStudy(studies, updated);
+                saveStudiesToStorage();
+                renderOverlayList();
+            };
+
+            const cancel = () => {
+                renamingStudyId = null;
+                renderOverlayList();
+            };
+
+            input.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") commit();
+                if (e.key === "Escape") cancel();
+            });
+
+            input.addEventListener("blur", commit);
+
+            meta.appendChild(input);
+        } else {
+            // --- Normal display mode ---
+            const name = document.createElement("div");
+            name.className = "study-name";
+            name.textContent = s.name;
+
+            const sub = document.createElement("div");
+            sub.className = "study-sub";
+            sub.textContent =
+                `${s.color === "black" ? "Schwarz" : "Weiß"}${s.id === activeStudyId ? " · aktiv" : ""}`;
+
+            meta.appendChild(name);
+            meta.appendChild(sub);
+        }
+
 
         const actions = document.createElement("div");
         actions.style.display = "flex";
         actions.style.gap = "8px";
+
+        const renameBtn = document.createElement("button");
+        renameBtn.className = "iconbtn";
+        renameBtn.type = "button";
+        renameBtn.title = "Umbenennen";
+        renameBtn.textContent = "✎";
+        renameBtn.addEventListener("click", () => {
+            renamingStudyId = s.id;
+            renderOverlayList();
+            // Fokus setzen passiert gleich beim Input (siehe unten)
+        });
+        actions.appendChild(renameBtn);
 
         const openBtn = document.createElement("button");
         openBtn.className = "iconbtn";

@@ -355,3 +355,8 @@ cg-board {
     font-weight: 600;
 }
 
+.study-rename.input-box {
+    padding: 8px 10px;
+    border-radius: 10px;
+}
+
