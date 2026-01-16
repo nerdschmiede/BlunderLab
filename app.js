@@ -50,6 +50,12 @@ const overlayEl = document.getElementById("overlay");
 const closeOverlayBtn = document.getElementById("closeOverlayBtn");
 const newStudyBtn = document.getElementById("newStudyBtn");
 const studyListEl = document.getElementById("studyList");
+const newStudyForm = document.getElementById("newStudyForm");
+const newStudyName = document.getElementById("newStudyName");
+const pickWhiteBtn = document.getElementById("pickWhite");
+const pickBlackBtn = document.getElementById("pickBlack");
+const cancelNewStudyBtn = document.getElementById("cancelNewStudy");
+
 
 /* ---------- Game state ---------- */
 const game = new Chess();
@@ -58,6 +64,8 @@ let orientation = localStorage.getItem(STORAGE_ORIENTATION_KEY) || "white";
 let fullLine = [];   // verbose moves (master line)
 let viewPly = 0;     // 0..fullLine.length
 let fullPgn = "";    // PGN of master line
+
+let newStudyColor = "white";
 
 /* Promotion */
 let promoPick = null;        // { from, to, squares } | null
@@ -176,6 +184,20 @@ function applyPgnFromInput(pgnText) {
     goToPly(fullLine.length, { save: true });
     return true;
 }
+
+
+function applyStudyDefaults(study) {
+    const o = study.color === "black" ? "black" : "white";
+
+    // update the app-level orientation state (whatever you use elsewhere)
+    orientation = o;
+    try { localStorage.setItem(STORAGE_ORIENTATION_KEY, o); } catch {}
+
+    // let your normal render path apply it
+    sync({ save: false });
+}
+
+
 
 
 /* ---------- Promotion UI ---------- */
@@ -354,6 +376,8 @@ function selectStudy(id) {
     const next = getActiveStudy();
     if (!next) return;
 
+    applyStudyDefaults(next);
+
     // Load the study's PGN into the app state
     game.reset();
     if (next.pgn) {
@@ -391,26 +415,55 @@ function deleteStudy(id) {
     saveStudiesToStorage();
 }
 
-function createNewStudyFlow() {
-    const name = window.prompt("Name der Eröffnung:", "");
+function openNewStudyForm() {
+    newStudyColor = "white";
+    pickWhiteBtn?.classList.add("active");
+    pickBlackBtn?.classList.remove("active");
+
+    newStudyForm?.classList.remove("hidden");
+    newStudyName.value = "";
+    newStudyName?.focus();
+}
+
+function closeNewStudyForm() {
+    newStudyForm?.classList.add("hidden");
+}
+
+pickWhiteBtn?.addEventListener("click", () => {
+    newStudyColor = "white";
+    pickWhiteBtn.classList.add("active");
+    pickBlackBtn.classList.remove("active");
+});
+
+pickBlackBtn?.addEventListener("click", () => {
+    newStudyColor = "black";
+    pickBlackBtn.classList.add("active");
+    pickWhiteBtn.classList.remove("active");
+});
+
+cancelNewStudyBtn?.addEventListener("click", closeNewStudyForm);
+
+newStudyBtn?.addEventListener("click", openNewStudyForm);
+
+newStudyForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = (newStudyName.value || "").trim();
     if (!name) return;
 
-    const isBlack = window.confirm("Für Schwarz? OK = Schwarz, Abbrechen = Weiß");
-    const color = isBlack ? "black" : "white";
-
-    const s = createStudy({ name, color });
+    const s = createStudy({ name, color: newStudyColor });
     studies = upsertStudy(studies, s);
     activeStudyId = s.id;
     saveStudiesToStorage();
 
-    // New study starts empty
+    // new study starts empty
     game.reset();
     commitFromGame();
     goToPly(0, { save: false });
 
-    renderOverlayList();
+    applyStudyDefaults(s);   // <- Orientierung, siehe Punkt 2
+    closeNewStudyForm();
     closeOverlay();
-}
+});
 
 /* ---------- Timeline navigation ---------- */
 function goToPly(ply, { save = false } = {}) {
@@ -598,7 +651,7 @@ btnImportPgn?.addEventListener("click", () => {
 
 studiesBtn?.addEventListener("click", openOverlay);
 closeOverlayBtn?.addEventListener("click", closeOverlay);
-newStudyBtn?.addEventListener("click", createNewStudyFlow);
+
 
 // Click on backdrop closes too
 overlayEl?.addEventListener("click", (e) => {

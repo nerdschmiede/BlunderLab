@@ -61,6 +61,21 @@
             </div>
 
             <div id="studyList" class="study-list"></div>
+            <form id="newStudyForm" class="new-study hidden">
+                <input id="newStudyName" class="input-box" type="text" placeholder="Name der Eröffnung" />
+
+                <div class="segmented" role="group" aria-label="Farbe">
+                    <button type="button" id="pickWhite" class="seg-btn active">Weiß</button>
+                    <button type="button" id="pickBlack" class="seg-btn">Schwarz</button>
+                </div>
+
+                <div class="row">
+                    <button type="button" id="cancelNewStudy" class="btn">Abbrechen</button>
+                    <button type="submit" class="btn primary">Erstellen</button>
+
+                </div>
+            </form>
+
         </div>
     </div>
 
