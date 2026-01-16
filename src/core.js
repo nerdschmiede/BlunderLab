@@ -173,3 +173,44 @@ export function applyEditInPast(fullLine, viewPly) {
 export function pgnHasFenHeader(pgnText) {
     return /\[FEN\s+"/i.test(String(pgnText ?? ""));
 }
+
+export function createStudy({ name, color }) {
+    const now = Date.now();
+    const id = `s_${now}_${Math.random().toString(16).slice(2)}`;
+    return {
+        id,
+        name: String(name ?? "").trim() || "New opening",
+        color: color === "black" ? "black" : "white",
+        pgn: "",
+        createdAt: now,
+        updatedAt: now,
+    };
+}
+
+export function upsertStudy(studies, study) {
+    const list = Array.isArray(studies) ? studies.slice() : [];
+    const idx = list.findIndex(s => s.id === study.id);
+    if (idx === -1) return [...list, study];
+    list[idx] = { ...list[idx], ...study };
+    return list;
+}
+
+export function pickStudy(studies, id) {
+    return (Array.isArray(studies) ? studies : []).find(s => s.id === id) ?? null;
+}
+
+/**
+ * One-time migration: if old single-PGN key exists and there are no studies yet,
+ * create a default study and mark it active.
+ */
+export function migrateLegacyPgn({ legacyPgn, existingStudies }) {
+    const studies = Array.isArray(existingStudies) ? existingStudies : [];
+    if (studies.length > 0) return { studies, activeStudyId: studies[0].id };
+
+    if (!legacyPgn) return { studies: [], activeStudyId: null };
+
+    const s = createStudy({ name: "Migrated opening", color: "white" });
+    s.pgn = legacyPgn;
+    s.updatedAt = Date.now();
+    return { studies: [s], activeStudyId: s.id };
+}

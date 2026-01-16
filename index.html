@@ -47,6 +47,22 @@
           placeholder="PGN einfügen …"
    />
     <button id="btnImportPgn" type="button" class="icon-btn text-btn">Import PGN</button>
+    <button id="studiesBtn" class="iconbtn" type="button" aria-label="Studies" title="Studies">📚</button>
+
+    <div id="overlay" class="overlay hidden" aria-hidden="true">
+        <div class="sheet" role="dialog" aria-modal="true" aria-label="Eröffnungen">
+            <div class="sheet-header">
+                <div class="sheet-title">Eröffnungen</div>
+                <button id="closeOverlayBtn" class="iconbtn" type="button" aria-label="Schließen">✕</button>
+            </div>
+
+            <div class="sheet-actions">
+                <button id="newStudyBtn" class="iconbtn" type="button" aria-label="Neue Eröffnung" title="Neue Eröffnung">＋</button>
+            </div>
+
+            <div id="studyList" class="study-list"></div>
+        </div>
+    </div>
 
 </main>
 

@@ -268,3 +268,46 @@ describe("PGN import guards", () => {
         expect(pgnHasFenHeader(pgn)).toBe(true);
     });
 });
+
+import { describe, it, expect } from "vitest";
+import { createStudy, upsertStudy, pickStudy, migrateLegacyPgn } from "./core.js";
+
+describe("studies (overlay MVP) - persistence helpers", () => {
+    it("createStudy creates a valid study object", () => {
+        const s = createStudy({ name: "Jobava", color: "white" });
+        expect(s.id).toBeTruthy();
+        expect(s.name).toBe("Jobava");
+        expect(s.color).toBe("white");
+        expect(s.pgn).toBe("");
+        expect(typeof s.createdAt).toBe("number");
+        expect(typeof s.updatedAt).toBe("number");
+    });
+
+    it("upsertStudy inserts and updates by id", () => {
+        const a = createStudy({ name: "A", color: "white" });
+        const b = createStudy({ name: "B", color: "black" });
+
+        let list = upsertStudy([], a);
+        list = upsertStudy(list, b);
+        expect(list.length).toBe(2);
+
+        const a2 = { ...a, name: "A2" };
+        list = upsertStudy(list, a2);
+        expect(list.length).toBe(2);
+        expect(list.find(x => x.id === a.id).name).toBe("A2");
+    });
+
+    it("pickStudy returns null if missing", () => {
+        const a = createStudy({ name: "A", color: "white" });
+        expect(pickStudy([a], "nope")).toBe(null);
+    });
+
+    it("migrateLegacyPgn creates default study if legacy pgn exists", () => {
+        const legacyPgn = "1. d4 d5 *";
+        const { studies, activeStudyId } = migrateLegacyPgn({ legacyPgn, existingStudies: [] });
+
+        expect(studies.length).toBe(1);
+        expect(activeStudyId).toBe(studies[0].id);
+        expect(studies[0].pgn).toContain("d4");
+    });
+});

@@ -237,3 +237,69 @@ cg-board {
 #pgn .mv.active { background: rgba(0, 0, 0, 0.12); }
 
 .invalid { outline: 2px solid currentColor; }
+
+/* ---------- Overlay (Study Picker) ---------- */
+.overlay.hidden { display: none; }
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    display: grid;
+    place-items: end center;
+    padding: var(--pad);
+    z-index: 50;
+}
+
+.sheet {
+    width: min(100%, var(--board-max));
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid rgba(0,0,0,0.12);
+    padding: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+}
+
+.sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sheet-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.sheet-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin: 10px 0;
+}
+
+.study-list {
+    display: grid;
+    gap: 8px;
+}
+
+.study-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: #fafafa;
+}
+
+.study-meta {
+    display: grid;
+    gap: 2px;
+}
+
+.study-name { font-weight: 600; }
+.study-sub  { font-size: 12px; opacity: 0.75; }
+
+.study-item .iconbtn { width: 44px; height: 44px; border-radius: 12px; }

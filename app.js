@@ -6,13 +6,16 @@ import {
     promoSquares,
     buildPgnHtml,
     nextViewPly,
-    // NEW state helpers:
     computeLastMove,
     applyEditInPast,
     applyCommit,
     applyJump,
     clampPly,
-    pgnHasFenHeader
+    pgnHasFenHeader,
+    createStudy,
+    upsertStudy,
+    pickStudy,
+    migrateLegacyPgn,
 } from "./src/core.js";
 
 
@@ -26,6 +29,9 @@ import {
 
 const STORAGE_PGN_KEY = "blunderlab.pgn";
 const STORAGE_ORIENTATION_KEY = "blunderlab.orientation";
+const STORAGE_STUDIES_KEY = "blunderlab.studies.v1";
+const STORAGE_ACTIVE_STUDY_KEY = "blunderlab.activeStudyId";
+
 
 /* ---------- DOM ---------- */
 const boardEl = document.getElementById("board");
@@ -39,6 +45,11 @@ const fenLine = document.getElementById("fenLine");
 const pgnEl = document.getElementById("pgn");
 const pgnInput = document.getElementById("pgnInput");
 const btnImportPgn = document.getElementById("btnImportPgn");
+const studiesBtn = document.getElementById("studiesBtn");
+const overlayEl = document.getElementById("overlay");
+const closeOverlayBtn = document.getElementById("closeOverlayBtn");
+const newStudyBtn = document.getElementById("newStudyBtn");
+const studyListEl = document.getElementById("studyList");
 
 /* ---------- Game state ---------- */
 const game = new Chess();
@@ -52,15 +63,53 @@ let fullPgn = "";    // PGN of master line
 let promoPick = null;        // { from, to, squares } | null
 let promoCustom = new Map(); // Map<square, "promo">
 
+let studies = [];          // Array<Study>
+let activeStudyId = null;  // string | null
+
+function loadStudiesFromStorage() {
+    try {
+        const raw = localStorage.getItem(STORAGE_STUDIES_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        console.warn("Failed to parse studies:", e);
+        return [];
+    }
+}
+
+function saveStudiesToStorage() {
+    try {
+        localStorage.setItem(STORAGE_STUDIES_KEY, JSON.stringify(studies));
+        if (activeStudyId) localStorage.setItem(STORAGE_ACTIVE_STUDY_KEY, activeStudyId);
+    } catch (e) {
+        console.warn("Failed to save studies:", e);
+    }
+}
+
+function getActiveStudy() {
+    return pickStudy(studies, activeStudyId);
+}
+
 
 /* ---------- Persistence ---------- */
 function autoSavePgn() {
-    try {
-        localStorage.setItem(STORAGE_PGN_KEY, fullPgn);
-    } catch (e) {
-        console.warn("Auto-save PGN failed:", e);
+    const s = getActiveStudy();
+
+    if (!s) {
+        // Fallback: keep legacy behavior so app still works without overlay state
+        try {
+            localStorage.setItem(STORAGE_PGN_KEY, fullPgn);
+        } catch (e) {
+            console.warn("Auto-save PGN failed:", e);
+        }
+        return;
     }
+
+    const now = Date.now();
+    const updated = { ...s, pgn: fullPgn, updatedAt: now };
+    studies = upsertStudy(studies, updated);
+    saveStudiesToStorage();
 }
+
 
 /* ---------- Chessground helpers ---------- */
 function calcDests(chess) {
@@ -214,6 +263,153 @@ function sync({ save = true } = {}) {
     updateButtons();
 
     if (save && viewPly === fullLine.length) autoSavePgn();
+}
+
+/* --------------Overlay------------------------- */
+
+function renderOverlayList() {
+    if (!studyListEl) return;
+
+    // newest first
+    const sorted = studies.slice().sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+    studyListEl.innerHTML = "";
+
+    for (const s of sorted) {
+        const item = document.createElement("div");
+        item.className = "study-item";
+
+        const meta = document.createElement("div");
+        meta.className = "study-meta";
+
+        const name = document.createElement("div");
+        name.className = "study-name";
+        name.textContent = s.name;
+
+        const sub = document.createElement("div");
+        sub.className = "study-sub";
+        sub.textContent = `${s.color === "black" ? "Schwarz" : "Weiß"}${s.id === activeStudyId ? " · aktiv" : ""}`;
+
+        meta.appendChild(name);
+        meta.appendChild(sub);
+
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+
+        const openBtn = document.createElement("button");
+        openBtn.className = "iconbtn";
+        openBtn.type = "button";
+        openBtn.title = "Öffnen";
+        openBtn.textContent = "↩";
+        openBtn.addEventListener("click", () => {
+            selectStudy(s.id);
+            closeOverlay();
+        });
+
+        const delBtn = document.createElement("button");
+        delBtn.className = "iconbtn";
+        delBtn.type = "button";
+        delBtn.title = "Löschen";
+        delBtn.textContent = "🗑";
+        delBtn.addEventListener("click", () => {
+            const ok = window.confirm(`Eröffnung löschen: "${s.name}"?`);
+            if (!ok) return;
+            deleteStudy(s.id);
+            renderOverlayList();
+        });
+
+        actions.appendChild(openBtn);
+        actions.appendChild(delBtn);
+
+        item.appendChild(meta);
+        item.appendChild(actions);
+        studyListEl.appendChild(item);
+    }
+}
+
+function openOverlay() {
+    if (!overlayEl) return;
+    overlayEl.classList.remove("hidden");
+    overlayEl.setAttribute("aria-hidden", "false");
+    renderOverlayList();
+}
+
+function closeOverlay() {
+    if (!overlayEl) return;
+    overlayEl.classList.add("hidden");
+    overlayEl.setAttribute("aria-hidden", "true");
+}
+
+function selectStudy(id) {
+    // Save current study's PGN into its record before switching
+    const current = getActiveStudy();
+    if (current) {
+        studies = upsertStudy(studies, { ...current, pgn: fullPgn, updatedAt: Date.now() });
+    }
+
+    activeStudyId = id;
+    saveStudiesToStorage();
+
+    const next = getActiveStudy();
+    if (!next) return;
+
+    // Load the study's PGN into the app state
+    game.reset();
+    if (next.pgn) {
+        try {
+            game.loadPgn(next.pgn);
+        } catch (e) {
+            console.warn("Study PGN invalid, resetting:", e);
+            game.reset();
+        }
+    }
+
+    commitFromGame();
+    goToPly(fullLine.length, { save: false });
+}
+
+function deleteStudy(id) {
+    studies = studies.filter(s => s.id !== id);
+
+    if (activeStudyId === id) {
+        activeStudyId = studies[0]?.id ?? null;
+        saveStudiesToStorage();
+
+        if (activeStudyId) {
+            selectStudy(activeStudyId);
+        } else {
+            // No studies left: reset board
+            game.reset();
+            commitFromGame();
+            goToPly(0, { save: false });
+            openOverlay();
+        }
+        return;
+    }
+
+    saveStudiesToStorage();
+}
+
+function createNewStudyFlow() {
+    const name = window.prompt("Name der Eröffnung:", "");
+    if (!name) return;
+
+    const isBlack = window.confirm("Für Schwarz? OK = Schwarz, Abbrechen = Weiß");
+    const color = isBlack ? "black" : "white";
+
+    const s = createStudy({ name, color });
+    studies = upsertStudy(studies, s);
+    activeStudyId = s.id;
+    saveStudiesToStorage();
+
+    // New study starts empty
+    game.reset();
+    commitFromGame();
+    goToPly(0, { save: false });
+
+    renderOverlayList();
+    closeOverlay();
 }
 
 /* ---------- Timeline navigation ---------- */
@@ -400,20 +596,48 @@ btnImportPgn?.addEventListener("click", () => {
     pgnInput.classList.toggle("invalid", !ok);
 });
 
+studiesBtn?.addEventListener("click", openOverlay);
+closeOverlayBtn?.addEventListener("click", closeOverlay);
+newStudyBtn?.addEventListener("click", createNewStudyFlow);
+
+// Click on backdrop closes too
+overlayEl?.addEventListener("click", (e) => {
+    if (e.target === overlayEl) closeOverlay();
+});
+
+
 /* =========================================================
    Boot: load saved PGN and start at end
    ========================================================= */
 (function boot() {
-    const savedPgn = localStorage.getItem(STORAGE_PGN_KEY);
-    if (savedPgn) {
+    // 1) Load studies + active id
+    studies = loadStudiesFromStorage();
+    activeStudyId = localStorage.getItem(STORAGE_ACTIVE_STUDY_KEY);
+
+    // 2) Legacy migration (old single-PGN key) if no studies exist
+    const legacyPgn = localStorage.getItem(STORAGE_PGN_KEY);
+    const migrated = migrateLegacyPgn({ legacyPgn, existingStudies: studies });
+
+    studies = migrated.studies;
+    if (!activeStudyId) activeStudyId = migrated.activeStudyId;
+
+    saveStudiesToStorage();
+
+    // 3) If we have a study, load it. Otherwise start empty + open overlay.
+    const s = getActiveStudy();
+    if (s?.pgn) {
         try {
-            game.loadPgn(savedPgn);
+            game.loadPgn(s.pgn);
         } catch (e) {
-            console.warn("Failed to load saved PGN:", e);
+            console.warn("Failed to load active study PGN:", e);
             game.reset();
         }
+    } else {
+        game.reset();
     }
 
     commitFromGame();
     goToPly(fullLine.length, { save: false });
+
+    if (!getActiveStudy()) openOverlay();
 })();
