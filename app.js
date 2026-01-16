@@ -586,13 +586,6 @@ requestAnimationFrame(ensurePromoDimmer);
 undoBtn.addEventListener("click", goPrevPly);
 redoBtn.addEventListener("click", goNextPly);
 
-resetBtn.addEventListener("click", () => {
-    exitPromotion();
-    game.reset();
-    commitFromGame();
-    sync({ save: true });
-});
-
 flipBtn.addEventListener("click", () => {
     orientation = orientation === "white" ? "black" : "white";
     localStorage.setItem(STORAGE_ORIENTATION_KEY, orientation);

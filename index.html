@@ -24,11 +24,10 @@
 
     <div class="controls" aria-label="Zugsteuerung">
         <button id="undoBtn" class="iconbtn" type="button" aria-label="Zurück">←</button>
-        <button id="resetBtn" class="iconbtn" type="button" aria-label="Reset">↺</button>
         <button id="redoBtn" class="iconbtn" type="button" aria-label="Vor">→</button>
         <button id="flipBtn" class="iconbtn" type="button" aria-label="Brett drehen">⇅</button>
-        <button id="copyPgnBtn" class="iconbtn" type="button" aria-label="PGN kopieren" title="PGN kopieren">⎘</button>
         <button id="lichessBtn" class="iconbtn" type="button" aria-label="Lichess Analyse">🔍︎</button>
+        <button id="studiesBtn" class="iconbtn" type="button" aria-label="Studies" title="Studies">☰</button>
     </div>
 
         <input
@@ -46,9 +45,10 @@
           class="input-box"
           placeholder="PGN einfügen …"
    />
-    <button id="btnImportPgn" type="button" class="icon-btn text-btn">Import PGN</button>
-    <button id="studiesBtn" class="iconbtn" type="button" aria-label="Studies" title="Studies">📚</button>
-
+    <div id="importexport">
+        <button id="btnImportPgn" type="button" class="icon-btn text-btn">Import PGN</button>
+        <button id="copyPgnBtn"  type="button" class="icon-btn text-btn">Export PGN</button>
+    </div>
     <div id="overlay" class="overlay hidden" aria-hidden="true">
         <div class="sheet" role="dialog" aria-modal="true" aria-label="Eröffnungen">
             <div class="sheet-header">

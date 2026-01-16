@@ -67,7 +67,7 @@ body {
     margin: 0 auto;
 }
 
-.controls {
+.controls .importexport{
     width: min(100%, var(--board-max));
     display: flex;
     justify-content: center;
