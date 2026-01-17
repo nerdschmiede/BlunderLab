@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BlunderLab</title>
+
+    <!-- Local chessground assets (from lichess/chessground repo) -->
+
+  <script type="module" crossorigin src="/BlunderLab/assets/index-BFgfG9sX.js"></script>
+  <link rel="stylesheet" crossorigin href="/BlunderLab/assets/index-CJxWEnu5.css">
+</head>
+<body>
+<main class="page">
+    <h1 class="title">BlunderLab</h1>
+
+    <div id="board" class="board" aria-label="Schachbrett"></div>
+
+    <div class="pgnline" id="pgnLine">
+        <div id="pgn"></div>
+    </div>
+
+    <div class="controls" aria-label="Zugsteuerung">
+        <button id="undoBtn" class="iconbtn" type="button" aria-label="Zurück">←</button>
+        <button id="redoBtn" class="iconbtn" type="button" aria-label="Vor">→</button>
+        <button id="flipBtn" class="iconbtn" type="button" aria-label="Brett drehen">⇅</button>
+        <button id="lichessBtn" class="iconbtn" type="button" aria-label="Lichess Analyse">🔍︎</button>
+        <button id="studiesBtn" class="iconbtn" type="button" aria-label="Studies" title="Studies">☰</button>
+    </div>
+
+        <input
+                id="fenLine"
+                type="text"
+                class="input-box"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="FEN"
+                aria-label="FEN"
+        />
+
+  <input
+          id="pgnInput"
+          class="input-box"
+          placeholder="PGN einfügen …"
+   />
+    <div id="importexport">
+        <button id="btnImportPgn" type="button" class="icon-btn text-btn">Import PGN</button>
+        <button id="copyPgnBtn"  type="button" class="icon-btn text-btn">Export PGN</button>
+    </div>
+    <div id="overlay" class="overlay hidden" aria-hidden="true">
+        <div class="sheet" role="dialog" aria-modal="true" aria-label="Eröffnungen">
+            <div class="sheet-header">
+                <div class="sheet-title">Eröffnungen</div>
+                <button id="closeOverlayBtn" class="iconbtn" type="button" aria-label="Schließen">✕</button>
+            </div>
+
+            <div class="sheet-actions">
+                <button id="newStudyBtn" class="iconbtn" type="button" aria-label="Neue Eröffnung" title="Neue Eröffnung">＋</button>
+            </div>
+
+            <div id="studyList" class="study-list"></div>
+            <form id="newStudyForm" class="new-study hidden">
+                <input id="newStudyName" class="input-box" type="text" placeholder="Name der Eröffnung" />
+
+                <div class="segmented" role="group" aria-label="Farbe">
+                    <button type="button" id="pickWhite" class="seg-btn active">Weiß</button>
+                    <button type="button" id="pickBlack" class="seg-btn">Schwarz</button>
+                </div>
+
+                <div class="row">
+                    <button type="button" id="cancelNewStudy" class="btn">Abbrechen</button>
+                    <button type="submit" class="btn primary">Erstellen</button>
+
+                </div>
+            </form>
+
+        </div>
+    </div>
+
+</main>
+
+
+</body>
+</html>
