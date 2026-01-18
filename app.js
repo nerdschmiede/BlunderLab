@@ -15,7 +15,7 @@ import {
     createStudy,
     upsertStudy,
     pickStudy,
-    migrateLegacyPgn,
+    migrateLegacyPgn, lichessAnalysisUrl,
 } from "./src/core.js";
 
 
@@ -651,9 +651,15 @@ flipBtn.addEventListener("click", () => {
 });
 
 lichessBtn.addEventListener("click", () => {
-    const url = lichessAnalysisUrlFromFen(game.fen(), orientation);
+    const url = lichessAnalysisUrl({
+        pgn: fullPgn,
+        fen: game.fen(),
+        orientation
+    });
+    console.log(url);
     window.open(url, "_blank", "noopener,noreferrer");
 });
+
 
 copyPgnBtn.addEventListener("click", async () => {
     const pgn = fullPgn || game.pgn();

@@ -13,10 +13,17 @@ describe("lichessAnalysisUrlFromFen", () => {
     it("builds lichess analysis URL with orientation", () => {
         const fen = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1";
         const url = lichessAnalysisUrlFromFen(fen, "white");
-        expect(url).toContain("https://lichess.org/analysis/standard/");
-        expect(url).toContain("?color=white");
-        expect(url).toContain("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR_b_KQkq_-_0_1");
+
+        expect(url).toContain("https://lichess.org/analysis/");
+        expect(url).toContain("color=white");
+
+        // board part is not encoded (slashes stay)
+        expect(url).toContain("/analysis/rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR");
+
+        // rest is encoded: "b KQkq - 0 1" -> "b%20KQkq%20-%200%201"
+        expect(url).toContain("b%20KQkq%20-%200%201");
     });
+
 
     it("falls back when fen is incomplete", () => {
         expect(lichessAnalysisUrlFromFen("invalid fen")).toBe("https://lichess.org/analysis");
@@ -83,14 +90,25 @@ describe("more edge cases", () => {
         it("trims and normalizes whitespace", () => {
             const fen = "  rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR   b   KQkq   -   0   1  ";
             const url = lichessAnalysisUrlFromFen(fen, "white");
-            expect(url).toContain("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR_b_KQkq_-_0_1");
+
+            // board part must appear literally (slashes not encoded)
+            expect(url).toContain("/analysis/rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR");
+
+            // the rest is URL-encoded: "b KQkq - 0 1" -> "b%20KQkq%20-%200%201"
+            expect(url).toContain("b%20KQkq%20-%200%201");
+
+            // color param
+            expect(url).toContain("color=white");
         });
 
         it("defaults halfmove/fullmove if missing", () => {
             const fen = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -";
             const url = lichessAnalysisUrlFromFen(fen, "white");
-            expect(url).toContain("_-_0_1");
+
+            // expects defaulted "0 1"
+            expect(url).toContain("b%20KQkq%20-%200%201");
         });
+
 
         it("supports orientation black", () => {
             const fen = "8/8/8/8/8/8/8/8 w - - 0 1";
@@ -309,5 +327,25 @@ describe("studies (overlay MVP) - persistence helpers", () => {
         expect(studies.length).toBe(1);
         expect(activeStudyId).toBe(studies[0].id);
         expect(studies[0].pgn).toContain("d4");
+    });
+});
+
+import { describe, it, expect } from "vitest";
+import { lichessAnalysisUrlFromPgn } from "./core.js";
+
+describe("lichessAnalysisUrlFromPgn", () => {
+    it("converts movetext into lichess move-string url", () => {
+        const pgn = `[Event "?"]
+
+1. d4 d5 2. Bf4 *`;
+
+        const url = lichessAnalysisUrlFromPgn(pgn);
+        expect(url).toBe("https://lichess.org/analysis/pgn/1.d4+d5+2.Bf4");
+    });
+
+    it("strips comments, variations and termination markers", () => {
+        const pgn = `1. e4 {hi} (1. d4) e5 2. Nf3 *`;
+        const url = lichessAnalysisUrlFromPgn(pgn);
+        expect(url).toBe("https://lichess.org/analysis/pgn/1.e4+e5+2.Nf3");
     });
 });

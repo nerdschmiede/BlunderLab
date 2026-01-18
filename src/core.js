@@ -11,19 +11,69 @@ export const PROMO_PIECES = /** @type {const} */ (["q", "n", "r", "b"]);
  * @param {"white"|"black"} orientation
  */
 export function lichessAnalysisUrlFromFen(fen, orientation = "white") {
+    if (!fen || typeof fen !== "string") return "https://lichess.org/analysis";
+
     const parts = fen.trim().split(/\s+/);
     if (parts.length < 4) return "https://lichess.org/analysis";
 
-    const board = parts[0];      // with /
-    const turn = parts[1];       // w|b
-    const castling = parts[2];   // KQkq|-
-    const ep = parts[3];         // -|e3
+    const board = parts[0];                 // keeps "/" (important!)
+    const turn = parts[1];
+    const castling = parts[2];
+    const ep = parts[3];
     const halfmove = parts[4] ?? "0";
     const fullmove = parts[5] ?? "1";
+    const rest = `${turn} ${castling} ${ep} ${halfmove} ${fullmove}`;
 
-    const fenPath = `${board}_${turn}_${castling}_${ep}_${halfmove}_${fullmove}`;
-    return `https://lichess.org/analysis/standard/${fenPath}?color=${orientation}`;
+
+    // Lichess commonly uses: /analysis/<board>%20<rest>
+    // board slashes must NOT be encoded.
+    const restEnc = encodeURIComponent(rest); // encodes spaces as %20 etc.
+    const color = orientation === "black" ? "black" : "white";
+
+    return `https://lichess.org/analysis/${board}%20${restEnc}?color=${color}&engine=1`;
 }
+
+export function lichessAnalysisUrlFromPgn(pgn) {
+    if (!pgn || typeof pgn !== "string") return "https://lichess.org/analysis";
+
+    const text = pgn.trim();
+    if (!text) return "https://lichess.org/analysis";
+
+    // Strip headers: keep only movetext after first blank line
+    const chunks = text.split(/\r?\n\r?\n/);
+    let movetext = (chunks.length > 1 ? chunks.slice(1).join("\n\n") : text);
+
+    // Remove comments and variations (URL parser is picky)
+    movetext = movetext
+        .replace(/\{[^}]*\}/g, " ")     // {...}
+        .replace(/;[^\n]*/g, " ")      // ; comment
+        .replace(/\([^)]*\)/g, " ");   // ( ... ) naive but fine for v1
+
+    // Normalize whitespace/newlines
+    movetext = movetext.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+
+    // Drop termination marker at end if present
+    movetext = movetext.replace(/\s*(1-0|0-1|1\/2-1\/2|\*)\s*$/, "").trim();
+
+    if (!movetext) return "https://lichess.org/analysis";
+
+    // Lichess URL "move string": no space after move number, and use '+' as separator
+    // Example: 1.e4+e5+2.c4 :contentReference[oaicite:1]{index=1}
+    const moveString = movetext
+        .replace(/(\d+)\.\s+/g, "$1.")  // "1. e4" -> "1.e4"
+        .replace(/\s+/g, "+");         // spaces -> '+'
+
+    return `https://lichess.org/analysis/pgn/${moveString}`;
+}
+
+
+export function lichessAnalysisUrl({ pgn, fen, orientation = "white" }) {
+    if (pgn && pgn.trim()) {
+        return lichessAnalysisUrlFromPgn(pgn);
+    }
+    return lichessAnalysisUrlFromFen(fen, orientation);
+}
+
 
 /**
  * @param {string} toSquare like "e8"
