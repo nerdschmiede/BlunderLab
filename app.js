@@ -656,17 +656,23 @@ lichessBtn.addEventListener("click", () => {
         fen: game.fen(),
         orientation
     });
-    console.log(url);
     window.open(url, "_blank", "noopener,noreferrer");
 });
 
+function stripPgnHeaders(pgn) {
+    if (!pgn) return "";
+    const parts = pgn.split(/\r?\n\r?\n/);
+    return parts.length > 1 ? parts.slice(1).join("\n\n").trim() : pgn.trim();
+}
 
 copyPgnBtn.addEventListener("click", async () => {
-    const pgn = fullPgn || game.pgn();
+    const rawPgn = fullPgn || game.pgn();
+    const pgn = stripPgnHeaders(rawPgn);
+
     try {
         await navigator.clipboard.writeText(pgn);
         copyPgnBtn.textContent = "✓";
-        setTimeout(() => (copyPgnBtn.textContent = "⎘"), 800);
+        setTimeout(() => (copyPgnBtn.textContent = "Export PGN"), 800);
     } catch {
         window.prompt("PGN kopieren (Strg+C):", pgn);
     }
