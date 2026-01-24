@@ -265,3 +265,37 @@ export function migrateLegacyPgn({ legacyPgn, existingStudies }) {
     s.updatedAt = Date.now();
     return { studies: [s], activeStudyId: s.id };
 }
+
+/**
+ * Return true if it's the user's turn given the study color and current ply.
+ * - ply is the cursor (0 = start, white to move)
+ * - studyColor is "white" or "black" (the user side)
+ */
+export function isUsersTurn(studyColor, ply) {
+    // White moves on odd plies? Actually ply counts half-moves: ply 0 -> white to move
+    // If ply is even, it's White to move; if odd, Black to move.
+    const whiteToMove = (ply % 2) === 0;
+    return studyColor === "white" ? whiteToMove : !whiteToMove;
+}
+
+/**
+ * Compare two move objects (from/to/promotion) for equality.
+ */
+export function sameMove(a, b) {
+    if (!a || !b) return false;
+    if (a.from !== b.from) return false;
+    if (a.to !== b.to) return false;
+    const pa = a.promotion ?? null;
+    const pb = b.promotion ?? null;
+    return pa === pb;
+}
+
+/**
+ * Return the expected move from fullLine at the given ply (the move that should be
+ * played at that cursor position). Returns null when out of range.
+ */
+export function expectedMove(fullLine, ply) {
+    const idx = clampPly(ply, fullLine.length);
+    if (idx >= fullLine.length) return null;
+    return fullLine[idx] ?? null;
+}

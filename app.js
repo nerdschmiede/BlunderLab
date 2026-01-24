@@ -14,8 +14,9 @@ import {
     createStudy,
     upsertStudy,
     pickStudy,
-    migrateLegacyPgn, lichessAnalysisUrl,
+    migrateLegacyPgn, lichessAnalysisUrl, isUsersTurn,
 } from "./src/core.js";
+import { handleTrainingMove } from "./src/training.js";
 
 
 /* =========================================================
@@ -56,6 +57,7 @@ const newStudyName = document.getElementById("newStudyName");
 const pickWhiteBtn = document.getElementById("pickWhite");
 const pickBlackBtn = document.getElementById("pickBlack");
 const cancelNewStudyBtn = document.getElementById("cancelNewStudy");
+const modeToggleBtn = document.getElementById("modeToggleBtn");
 
 
 /* ---------- Game state ---------- */
@@ -79,6 +81,84 @@ let studies = [];          // Array<Study>
 let activeStudyId = null;  // string | null
 
 let renamingStudyId = null;
+
+// Mode: "edit" | "train" (default edit)
+let mode = "edit";
+
+// When a user makes a move, we may want to delay the next auto-opponent animation
+// until the user's visual animation finished + a short pause. This timestamp (ms)
+// marks the earliest time the opponent animation should start.
+let pendingOpponentStartAt = 0;
+
+// Track the last user move timestamp and its animation duration so we can guarantee a visible pause
+let lastUserMoveAt = 0;
+let lastUserAnimMs = 0;
+
+// Minimum pause between end of user's animation and opponent autoplay (ms)
+const OPPONENT_PAUSE_MS = 300;
+
+// Wire up segmented mode toggle: two equal buttons "Edit" and "Train"
+if (modeToggleBtn) {
+    // Clear any existing content and build two buttons
+    modeToggleBtn.innerHTML = "";
+    modeToggleBtn.classList.add('segmented-toggle');
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'iconbtn';
+    editBtn.textContent = 'Edit';
+    editBtn.setAttribute('aria-pressed', 'false');
+
+    const trainBtn = document.createElement('button');
+    trainBtn.type = 'button';
+    trainBtn.className = 'iconbtn';
+    trainBtn.textContent = 'Train';
+    trainBtn.setAttribute('aria-pressed', 'false');
+
+    // Helper to update visuals
+    const updateModeButtons = () => {
+        if (mode === 'train') {
+            trainBtn.classList.add('active');
+            trainBtn.setAttribute('aria-pressed', 'true');
+            editBtn.classList.remove('active');
+            editBtn.setAttribute('aria-pressed', 'false');
+        } else {
+            editBtn.classList.add('active');
+            editBtn.setAttribute('aria-pressed', 'true');
+            trainBtn.classList.remove('active');
+            trainBtn.setAttribute('aria-pressed', 'false');
+        }
+    };
+
+    editBtn.addEventListener('click', () => {
+        if (mode === 'edit') return;
+        mode = 'edit';
+        updateModeButtons();
+        // no additional action needed for edit mode
+        stopAutoplay();
+        // ensure UI reflects new mode
+        sync({ save: false });
+    });
+
+    trainBtn.addEventListener('click', () => {
+        if (mode === 'train') return;
+        mode = 'train';
+        updateModeButtons();
+
+        // When entering train mode, always reset view to start (ply 0) and begin autoplay as before
+        try {
+            goToPly(0);
+            autoplayUntilUsersTurn({ delayMs: 500 });
+        } catch (e) {}
+    });
+
+    // Append buttons into the container
+    modeToggleBtn.appendChild(editBtn);
+    modeToggleBtn.appendChild(trainBtn);
+
+    // Initialize visuals according to current mode
+    updateModeButtons();
+}
 
 // ---------------- Persistence helpers ----------------
 function loadStudiesFromStorage() {
@@ -299,6 +379,32 @@ function sync({ save = true } = {}) {
         lastMove: getLastMove() ?? undefined,
     });
 
+    fenLine.value = game.fen();
+    fenLine.classList.remove("invalid");
+
+    renderPgn();
+    updateButtons();
+
+    if (save && viewPly === fullLine.length) autoSavePgn();
+}
+
+// Lightweight sync that updates UI and Chessground metadata without replacing the position/fen.
+function minimalSync({ save = true } = {}) {
+    const turn = game.turn() === "w" ? "white" : "black";
+    const inCheck = game.inCheck?.() ?? false;
+    const checkColor = inCheck ? turn : false;
+
+    // Update Chessground metadata (turn, movable, highlights, lastMove) but don't set fen/pieces.
+    ground.set({
+        orientation,
+        turnColor: turn,
+        movable: { free: false, color: turn, dests: calcDests(game) },
+        check: checkColor,
+        highlight: { check: true, lastMove: true, custom: promoCustom },
+        lastMove: getLastMove() ?? undefined,
+    });
+
+    // Update UI inputs that are independent of ground's piece placement
     fenLine.value = game.fen();
     fenLine.classList.remove("invalid");
 
@@ -553,13 +659,123 @@ function goToPly(ply, { save = false } = {}) {
 }
 
 function goPrevPly() {
+    // Block timeline navigation when in training mode
+    if (mode === "train") return;
     goToPly(nextViewPly(viewPly, -1, fullLine.length));
 }
 function goNextPly() {
+    // Block timeline navigation when in training mode
+    if (mode === "train") return;
     goToPly(nextViewPly(viewPly, +1, fullLine.length));
 }
 
-/* ---------- Master line commit from game ---------- */
+
+let autoplayTimer = null;
+
+function stopAutoplay() {
+    if (autoplayTimer) {
+        clearTimeout(autoplayTimer);
+        autoplayTimer = null;
+    }
+}
+
+function autoplayUntilUsersTurn({ delayMs = 350 } = {}) {
+    stopAutoplay();
+    if (mode !== "train") return;
+
+    const studyColor = getActiveStudy()?.color ?? "white";
+
+    const step = () => {
+        try {
+            if (mode !== "train") return;
+
+            // If it's user's turn, stop.
+            if (isUsersTurn(studyColor, viewPly)) return;
+
+            const exp = fullLine[viewPly];
+            if (!exp) return; // no more mainline
+
+            // If Chessground is available and move is simple (no special promo UI), ask it to animate the move.
+            const useGroundMove = typeof ground !== 'undefined' && ground && !exp.promotion;
+
+            if (useGroundMove) {
+                // declare startDelay here so it's visible outside the try block
+                let startDelay = OPPONENT_PAUSE_MS;
+                try {
+                    // Decide delay so that if a user just moved, we wait until their animation + pause.
+                    const now = Date.now();
+                    startDelay = (pendingOpponentStartAt && pendingOpponentStartAt > now) ? (pendingOpponentStartAt - now) : OPPONENT_PAUSE_MS;
+
+                    // Clear pending time since we're going to consume it
+                    pendingOpponentStartAt = 0;
+
+                    // Let chessground animate the piece from -> to after startDelay
+                    if (startDelay > 0) {
+                        setTimeout(() => ground.move(exp.from, exp.to), startDelay);
+                    } else {
+                        ground.move(exp.from, exp.to);
+                    }
+                } catch (e) {
+                    // Fallback to instant goToPly on error
+                    goToPly(viewPly + 1, { save: false });
+                }
+
+                // Advance the cursor immediately to keep internal logic consistent, but only after the visual starts
+                // If we delayed the visual, increment after the delay so lastMove highlights stay consistent.
+                const delayToInc = startDelay;
+                if (delayToInc > 0) {
+                    setTimeout(() => { viewPly = clampPly(viewPly + 1, fullLine.length); }, delayToInc);
+                } else {
+                    viewPly = clampPly(viewPly + 1, fullLine.length);
+                }
+
+                // After the animation finishes, update the chess.js state and sync the UI.
+                const animMs = (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
+                const wait = Math.max(delayMs, animMs + 60) + startDelay;
+
+                autoplayTimer = setTimeout(() => {
+                    if (mode !== "train") return;
+
+                    // Apply move to chess.js (no commitFromGame; this is a replay)
+                    try {
+                        game.move({ from: exp.from, to: exp.to, promotion: exp.promotion });
+                    } catch (e) {
+                        // ignore - keep game consistent via goToPly if needed
+                        setGameToPly(viewPly);
+                    }
+
+                    // Mirror game to Chessground/UI after the move
+                    minimalSync({ save: false });
+
+                    // schedule next step
+                    step();
+                }, wait);
+
+                return;
+            }
+
+            // Fallback: advance via goToPly (instant change handled by sync which may animate)
+            goToPly(viewPly + 1, { save: false });
+
+            const animMs = (typeof ground !== 'undefined' && ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
+            const wait = Math.max(delayMs, animMs + 60);
+            autoplayTimer = setTimeout(step, wait);
+        } catch (err) {
+            console.error('autoplayUntilUsersTurn step error:', err);
+            // Stop the autoplay so we don't spam errors continuously
+            stopAutoplay();
+        }
+    };
+
+    // initial wait uses same logic so the first visible step isn't rushed
+    const animMsInit = (typeof ground !== 'undefined' && ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
+    const initialWait = Math.max(delayMs, animMsInit + 60);
+    autoplayTimer = setTimeout(step, initialWait);
+}
+
+
+
+ /* ---------- Master line commit from game ---------- */
 // Update fullLine/fullPgn from the `game` object and let core.applyCommit
 // compute viewPly/branching details.
 function commitFromGame() {
@@ -602,6 +818,83 @@ function applyFenFromInput() {
     goToPly(fullLine.length, { save: true });
 }
 
+const setGameToPlyTrain = (p) => {
+    const target = clampPly(p, fullLine.length);
+    const prev = viewPly;
+
+    if (target === prev) return;
+
+    const animMs = (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
+    const animMargin = 60;
+
+    // Case A: single-step advance (user move only)
+    if (target === prev + 1) {
+        // Update internal state to the user's ply
+        viewPly = target;
+        setGameToPly(viewPly);
+
+        // Let the UI catch up after the visible Chessground animation
+        setTimeout(() => { minimalSync({ save: false }); }, animMs + animMargin);
+
+        // Ensure opponent autoplay waits until user's animation + pause
+        pendingOpponentStartAt = Date.now() + animMs + OPPONENT_PAUSE_MS;
+        autoplayUntilUsersTurn({ delayMs: 500 });
+        return;
+    }
+
+    // Case B: two-step advance (user + opponent) where both moves are part of the mainline.
+    // We must update internal state immediately (tests expect this) but show only the user's position first and start the opponent animation after a pause.
+    if (target === prev + 2) {
+        // Compute opponent move descriptor
+        // const userMove = fullLine[prev]; // unused; we only need oppMove
+        const oppMove = fullLine[prev + 1];   // opponent's expected move
+
+        // For test determinism, update internal state to the final ply now
+        // but we will temporarily render the board as if only the user's move happened.
+        // 1) Compute FEN after user's move
+        setGameToPly(prev + 1);
+        const fenAfterUser = game.fen();
+
+        // 2) Now set the game to the final target (both moves applied)
+        setGameToPly(target);
+        viewPly = target;
+
+        // 3) Render the board as the user's position (so user sees their move), but keep
+        // the engine/game already at the final position internally.
+        try {
+            ground.set({ fen: fenAfterUser, orientation, turnColor: game.turn() === 'w' ? 'white' : 'black' });
+        } catch (e) {
+            // best-effort; if ground.set fails, fallback to minimalSync which will at least update UI metadata
+            minimalSync({ save: false });
+        }
+
+        // Schedule opponent animation after user's animation + pause
+        const startDelay = animMs + OPPONENT_PAUSE_MS;
+
+        setTimeout(() => {
+            // Animate opponent via Chessground; fallback to immediate sync on error
+            try {
+                if (!oppMove.promotion) ground.move(oppMove.from, oppMove.to);
+                else {
+                    // If promotion, we can't animate via ground.move reliably — just set game into position
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            // After opponent animation finishes, mirror internal game to UI
+            setTimeout(() => { minimalSync({ save: false }); }, animMs + animMargin);
+        }, startDelay);
+
+        return;
+    }
+
+    // Fallback: arbitrary jump — behave like normal goToPly but do not trigger saves
+    viewPly = target;
+    setGameToPly(viewPly);
+    minimalSync({ save: false });
+};
+
 
 /* =========================================================
    Chessground init
@@ -614,6 +907,95 @@ const ground = Chessground(boardEl, {
     events: {
         move: (from, to) => {
             if (promoPick) return;
+
+            // Training mode: delegate first (NO edit-in-past logic)
+            if (mode === "train") {
+                if (isPromotionMove(from, to)) {
+                    enterPromotion(from, to);
+                    return;
+                }
+
+                const moveObj = { from, to };
+
+                // Track user-originated move so we can delay UI sync differently for user vs auto moves
+                const userMoveKey = `${moveObj.from}-${moveObj.to}`;
+                let userMoveHandled = false;
+
+                const makeMoveCb = (m) => {
+                    // Apply the move to chess.js synchronously so internal state (fullLine, viewPly)
+                    // is updated for any immediate logic/tests.
+                    let mv = null;
+                    try { mv = game.move(m); } catch { return null; }
+                    if (!mv) return null;
+
+                    // Update master line state immediately
+                    commitFromGame();
+
+                    const key = `${m.from}-${m.to}`;
+                    const animMs = (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
+                    const animMargin = 60; // safety margin after animation
+                    const opponentPause = OPPONENT_PAUSE_MS; // pause before opponent animation starts
+
+                    if (!userMoveHandled && key === userMoveKey) {
+                        // User's own move: Chessground already performed the visual change (drag/release).
+                        // Don't call ground.move again (that can cause a visual jump). Instead delay minimalSync
+                        // until after the board's animation finishes so pieces appear smooth.
+                        userMoveHandled = true;
+
+                        // schedule minimalSync after the user's animation finished
+                        setTimeout(() => { minimalSync({ save: true }); }, animMs + animMargin);
+
+                        // set the earliest time an opponent animation may start: after user's animation + opponentPause
+                        pendingOpponentStartAt = Date.now() + animMs + opponentPause;
+
+                        // record last user move time + animation to compute exact pause later
+                        lastUserMoveAt = Date.now();
+                        lastUserAnimMs = animMs;
+                    } else {
+                        // Auto-played opponent move: decide when to start the opponent animation.
+                        // Compute startDelay relative to now and pendingOpponentStartAt.
+                        const now = Date.now();
+                        let startDelay;
+
+                        // Desired start time if there was a recent user move
+                        const desiredFromUser = lastUserMoveAt ? (lastUserMoveAt + lastUserAnimMs + opponentPause) : 0;
+
+                        if (userMoveHandled && key !== userMoveKey && desiredFromUser > now) {
+                            // Opponent move immediately follows user's move in same handler -> wait until user's animation finished + pause
+                            startDelay = desiredFromUser - now;
+                        } else {
+                            // Otherwise honor any pendingOpponentStartAt or fallback to simple opponentPause
+                            startDelay = (pendingOpponentStartAt && pendingOpponentStartAt > now) ? (pendingOpponentStartAt - now) : opponentPause;
+                        }
+
+                        // Clear timing markers after consumption
+                        pendingOpponentStartAt = 0;
+                        lastUserMoveAt = 0;
+                        lastUserAnimMs = 0;
+
+                        setTimeout(() => {
+                            try { ground.move(m.from, m.to); } catch (e) { /* ignore */ }
+                        }, startDelay);
+
+                        // After opponent animation completes, update UI. Opponent animation duration = animMs.
+                        setTimeout(() => { minimalSync({ save: true }); }, startDelay + animMs + animMargin);
+                    }
+
+                    return mv;
+                };
+
+                handleTrainingMove({
+                    fullLine,
+                    viewPly,
+                    studyColor: getActiveStudy()?.color ?? "white",
+                    makeMove: makeMoveCb,
+                    setGameToPly: setGameToPlyTrain,
+                }, moveObj);
+
+                return;
+            }
+
+            // --- Edit mode only below here ---
 
             // If in the past: cut future and replay truncated line before applying new move
             const edited = applyEditInPast(fullLine, viewPly);
@@ -634,6 +1016,7 @@ const ground = Chessground(boardEl, {
             commitFromGame();
             sync({ save: true });
         },
+
 
         select: (key) => {
             if (!promoPick) return;
@@ -660,6 +1043,22 @@ const ground = Chessground(boardEl, {
 });
 
 requestAnimationFrame(ensurePromoDimmer);
+
+// Prevent fast "flying" artifacts on simple clicks: temporarily disable CSS transitions
+// on .cg-wrap when the user presses down, then re-enable shortly after.
+requestAnimationFrame(() => {
+    const wrap = boardEl.querySelector('.cg-wrap');
+    if (!wrap) return;
+    let clear = null;
+    wrap.addEventListener('pointerdown', () => {
+        wrap.classList.add('cg-no-trans');
+        if (clear) clearTimeout(clear);
+        clear = setTimeout(() => {
+            wrap.classList.remove('cg-no-trans');
+            clear = null;
+        }, 120);
+    });
+});
 
 /* =========================================================
    Event listeners
@@ -705,6 +1104,7 @@ copyPgnBtn.addEventListener("click", async () => {
 
 // PGN click -> jump
 pgnEl.addEventListener("click", (e) => {
+    if (mode === "train") return; // block PGN jumps in train mode
     const mv = e.target.closest(".mv");
     if (!mv) return;
     const target = parseInt(mv.dataset.ply, 10);
@@ -714,6 +1114,7 @@ pgnEl.addEventListener("click", (e) => {
 
 // Keyboard arrows
 document.addEventListener("keydown", (e) => {
+    if (mode === "train") return; // block keyboard navigation in train mode
     const tag = document.activeElement?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
 

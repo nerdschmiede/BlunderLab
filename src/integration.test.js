@@ -8,6 +8,7 @@ import {
     computeLastMove,
     nextViewPly,
 } from "./core.js";
+import { handleTrainingMove } from "./training.js";
 
 /**
  * Minimal “app-like” harness:
@@ -402,6 +403,108 @@ describe("Integration: core helpers + chess.js (no UI)", () => {
         expect(after).toEqual(before);
     });
 
+});
 
+// Training logic was previously implemented inline for the harness; it has been
+// extracted to `src/training.js`. Tests below call `handleTrainingMove` directly;
+describe("Training mode integration (no UI)", () => {
+    it("correct move advances ply and auto-plays opponent move", () => {
+        const h = createHarness();
+
+        // Build a main line: 1. e4 e5 2. Nf3 Nc6
+        h.makeMove({ from: "e2", to: "e4" });
+        h.makeMove({ from: "e7", to: "e5" });
+        h.makeMove({ from: "g1", to: "f3" });
+        h.makeMove({ from: "b8", to: "c6" });
+
+        // Jump back to start of training
+        h.goToPly(0);
+
+        const before = h.state();
+
+        // User playing White at ply 0: expected move is e2->e4
+        const mv = handleTrainingMove({
+            fullLine: before.fullLine,
+            viewPly: before.viewPly,
+            studyColor: "white",
+            makeMove: h.makeMove,
+            setGameToPly: h.goToPly,
+        }, { from: "e2", to: "e4" });
+
+        expect(mv).not.toBe(null);
+
+        // After user's correct move, opponent (black) should be auto-played: e7->e5
+        const s = h.state();
+        expect(s.viewPly).toBe(2);
+        expect(s.fullLine.map(m => m.san)).toEqual(["e4", "e5", "Nf3", "Nc6"]);
+    });
+
+    it("illegal/unexpected move does not mutate state", () => {
+        const h = createHarness();
+
+        // set line: 1. d4 d5
+        h.makeMove({ from: "d2", to: "d4" });
+        h.makeMove({ from: "d7", to: "d5" });
+        h.goToPly(0);
+
+        const before = h.state();
+
+        // Attempt wrong move (not expected): e2->e4 instead of d2->d4
+        const res = handleTrainingMove({
+            fullLine: before.fullLine,
+            viewPly: before.viewPly,
+            studyColor: "white",
+            makeMove: h.makeMove,
+            setGameToPly: h.goToPly,
+        }, { from: "e2", to: "e4" });
+
+        expect(res).toBe(null);
+
+        const after = h.state();
+        expect(after).toEqual(before);
+    });
+
+    it("studyColor=black: user only plays black moves, white auto-plays", () => {
+        const h = createHarness();
+
+        // main line: 1. e4 e5 2. Nf3 Nc6
+        h.makeMove({ from: "e2", to: "e4" });
+        h.makeMove({ from: "e7", to: "e5" });
+        h.makeMove({ from: "g1", to: "f3" });
+        h.makeMove({ from: "b8", to: "c6" });
+
+        h.goToPly(0);
+
+        const before = h.state();
+
+        // User is black: trying to play black at ply 0 should be rejected
+        const reject = handleTrainingMove({
+            fullLine: before.fullLine,
+            viewPly: before.viewPly,
+            studyColor: "black",
+            makeMove: h.makeMove,
+            setGameToPly: h.goToPly,
+        }, { from: "e7", to: "e5" });
+
+        expect(reject).toBe(null);
+
+        // Now simulate system auto-playing white's expected move and then accept black move
+        // Auto-play white by advancing along mainline without branching
+        h.goToPly(h.state().viewPly + 1);
+
+        const mid = h.state();
+        // Now user (black) plays expected black move
+        const mv = handleTrainingMove({
+            fullLine: mid.fullLine,
+            viewPly: mid.viewPly,
+            studyColor: "black",
+            makeMove: h.makeMove,
+            setGameToPly: h.goToPly,
+        }, { from: "e7", to: "e5" });
+
+        expect(mv).not.toBe(null);
+        const s = h.state();
+        expect(s.viewPly).toBe(3);
+    });
 });
 

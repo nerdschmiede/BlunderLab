@@ -350,3 +350,40 @@ describe("lichessAnalysisUrlFromPgn", () => {
     });
 });
 
+// Training helper unit tests (TDD)
+import { isUsersTurn, sameMove, expectedMove } from "./core.js";
+
+describe("training helpers (pure)", () => {
+    describe("isUsersTurn", () => {
+        it("returns true when it's the user's turn based on study color and ply", () => {
+            expect(isUsersTurn("white", 0)).toBe(true); // white to move at ply 0
+            expect(isUsersTurn("white", 1)).toBe(false);
+            expect(isUsersTurn("black", 0)).toBe(false);
+            expect(isUsersTurn("black", 1)).toBe(true);
+        });
+    });
+
+    describe("sameMove", () => {
+        it("compares from/to and promotion (if present)", () => {
+            const a = { from: "e2", to: "e4" };
+            const b = { from: "e2", to: "e4" };
+            expect(sameMove(a, b)).toBe(true);
+
+            const c = { from: "a7", to: "a8", promotion: "q" };
+            const d = { from: "a7", to: "a8", promotion: "q" };
+            expect(sameMove(c, d)).toBe(true);
+
+            const e = { from: "a7", to: "a8" };
+            expect(sameMove(c, e)).toBe(false);
+        });
+    });
+
+    describe("expectedMove", () => {
+        it("returns the next move at viewPly or null when out of range", () => {
+            const line = [{ from: "e2", to: "e4" }, { from: "e7", to: "e5" }];
+            expect(expectedMove(line, 0)).toMatchObject({ from: "e2", to: "e4" });
+            expect(expectedMove(line, 1)).toMatchObject({ from: "e7", to: "e5" });
+            expect(expectedMove(line, 2)).toBeNull();
+        });
+    });
+});
