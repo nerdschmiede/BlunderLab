@@ -2,7 +2,6 @@ import { Chessground } from "chessground";
 import { Chess } from "chess.js";
 
 import {
-    lichessAnalysisUrlFromFen,
     promoSquares,
     buildPgnHtml,
     nextViewPly,
@@ -27,6 +26,8 @@ import {
    - branching in past via core applyEditInPast()
    ========================================================= */
 
+// -------------------- Storage keys --------------------
+// Constants for localStorage keys. Important for migration and persistence.
 const STORAGE_PGN_KEY = "blunderlab.pgn";
 const STORAGE_ORIENTATION_KEY = "blunderlab.orientation";
 const STORAGE_STUDIES_KEY = "blunderlab.studies.v1";
@@ -34,10 +35,10 @@ const STORAGE_ACTIVE_STUDY_KEY = "blunderlab.activeStudyId";
 
 
 /* ---------- DOM ---------- */
+// References to DOM elements — optional event listeners will still work if an element is missing.
 const boardEl = document.getElementById("board");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
-const resetBtn = document.getElementById("resetBtn");
 const flipBtn = document.getElementById("flipBtn");
 const copyPgnBtn = document.getElementById("copyPgnBtn");
 const lichessBtn = document.getElementById("lichessBtn");
@@ -58,9 +59,11 @@ const cancelNewStudyBtn = document.getElementById("cancelNewStudy");
 
 
 /* ---------- Game state ---------- */
+// `game` is our chess engine (chess.js). All moves should be validated via this object.
 const game = new Chess();
 let orientation = localStorage.getItem(STORAGE_ORIENTATION_KEY) || "white";
 
+// Core states: master line (complete move list) and cursor (viewPly)
 let fullLine = [];   // verbose moves (master line)
 let viewPly = 0;     // 0..fullLine.length
 let fullPgn = "";    // PGN of master line
@@ -68,6 +71,7 @@ let fullPgn = "";    // PGN of master line
 let newStudyColor = "white";
 
 /* Promotion */
+// promoPick: when null => no promotion selection active
 let promoPick = null;        // { from, to, squares } | null
 let promoCustom = new Map(); // Map<square, "promo">
 
@@ -76,6 +80,7 @@ let activeStudyId = null;  // string | null
 
 let renamingStudyId = null;
 
+// ---------------- Persistence helpers ----------------
 function loadStudiesFromStorage() {
     try {
         const raw = localStorage.getItem(STORAGE_STUDIES_KEY);
@@ -100,7 +105,8 @@ function getActiveStudy() {
 }
 
 
-/* ---------- Persistence ---------- */
+/* ---------- Persistence: auto-save PGN ---------- */
+// Save current `fullPgn` either into active study or as legacy PGN.
 function autoSavePgn() {
     const s = getActiveStudy();
 
@@ -122,6 +128,7 @@ function autoSavePgn() {
 
 
 /* ---------- Chessground helpers ---------- */
+// Calculate chessground destinations mapping source -> [dest,...]
 function calcDests(chess) {
     const dests = new Map();
     const moves = chess.moves({ verbose: true });
@@ -132,6 +139,8 @@ function calcDests(chess) {
     return dests;
 }
 
+// Set `game` to the position after `ply` half-moves (0 = starting position).
+// Uses `fullLine` as the source of truth.
 function setGameToPly(ply) {
     const p = clampPly(ply, fullLine.length);
     game.reset();
@@ -142,12 +151,13 @@ function setGameToPly(ply) {
             game.move({ from: m.from, to: m.to, promotion: m.promotion });
         }
     } catch {
-        // Never crash the app on a bad timeline
+        // Never let the app crash; restore starting position on error.
         game.reset();
     }
 }
 
 
+// Purely checks from the current position whether a normal move would be a promotion.
 function isPromotionMove(from, to) {
     const p = game.get(from);
     if (!p || p.type !== "p") return false;
@@ -159,6 +169,8 @@ function cgColor(chessColor) {
     return chessColor === "w" ? "white" : "black";
 }
 
+// ---------------- PGN Import ----------------
+// Try to load a PGN from text. On error, restore previous state.
 function applyPgnFromInput(pgnText) {
     const text = (pgnText ?? "").trim();
     if (!text) return false;
@@ -188,14 +200,15 @@ function applyPgnFromInput(pgnText) {
 }
 
 
+// Apply study defaults (e.g. orientation)
 function applyStudyDefaults(study) {
     const o = study.color === "black" ? "black" : "white";
 
-    // update the app-level orientation state (whatever you use elsewhere)
+    // update the app-level orientation state
     orientation = o;
     try { localStorage.setItem(STORAGE_ORIENTATION_KEY, o); } catch {}
 
-    // let your normal render path apply it
+    // trigger a render path without saving
     sync({ save: false });
 }
 
@@ -203,6 +216,7 @@ function applyStudyDefaults(study) {
 
 
 /* ---------- Promotion UI ---------- */
+// Ensure a semi-transparent dimmer under promo pieces exists (visual only).
 function ensurePromoDimmer() {
     const wrap = boardEl.querySelector(".cg-wrap");
     if (!wrap) return;
@@ -214,6 +228,7 @@ function ensurePromoDimmer() {
     }
 }
 
+// Enter promotion selection: draw four pieces and lock normal moves.
 function enterPromotion(from, to) {
     const chessColor = game.get(from).color; // "w" | "b"
     const squares = promoSquares(to, chessColor);
@@ -238,6 +253,7 @@ function enterPromotion(from, to) {
     boardEl.querySelector(".cg-wrap")?.classList.add("promo-active");
 }
 
+// Exit promotion mode and clear promo markers.
 function exitPromotion() {
     if (!promoPick) return;
 
@@ -251,11 +267,13 @@ function exitPromotion() {
 }
 
 /* ---------- UI rendering ---------- */
+// Enable/disable buttons based on viewPly.
 function updateButtons() {
     undoBtn.disabled = viewPly <= 0;
     redoBtn.disabled = viewPly >= fullLine.length;
 }
 
+// Render PGN into the UI element (core.buildPgnHtml generates HTML).
 function renderPgn() {
     pgnEl.innerHTML = buildPgnHtml(fullLine, viewPly);
 }
@@ -265,6 +283,7 @@ function getLastMove() {
     return computeLastMove(fullLine, viewPly);
 }
 
+// Sync: mirror `game` and app state into Chessground & UI; optional save via autoSavePgn().
 function sync({ save = true } = {}) {
     const turn = game.turn() === "w" ? "white" : "black";
     const inCheck = game.inCheck?.() ?? false;
@@ -289,7 +308,7 @@ function sync({ save = true } = {}) {
     if (save && viewPly === fullLine.length) autoSavePgn();
 }
 
-/* --------------Overlay------------------------- */
+/* --------------Overlay / Studies ------------------------- */
 
 
 function renderOverlayList() {
@@ -314,7 +333,7 @@ function renderOverlayList() {
             input.type = "text";
             input.value = s.name;
 
-            // Fokus nach dem Render
+            // Focus after render
             setTimeout(() => input.focus(), 0);
 
             const commit = () => {
@@ -353,8 +372,9 @@ function renderOverlayList() {
 
             const sub = document.createElement("div");
             sub.className = "study-sub";
+            // Show study color and active marker in English
             sub.textContent =
-                `${s.color === "black" ? "Schwarz" : "Weiß"}${s.id === activeStudyId ? " · aktiv" : ""}`;
+                `${s.color === "black" ? "Black" : "White"}${s.id === activeStudyId ? " · active" : ""}`;
 
             meta.appendChild(name);
             meta.appendChild(sub);
@@ -368,19 +388,19 @@ function renderOverlayList() {
         const renameBtn = document.createElement("button");
         renameBtn.className = "iconbtn";
         renameBtn.type = "button";
-        renameBtn.title = "Umbenennen";
+        renameBtn.title = "Rename";
         renameBtn.textContent = "✎";
         renameBtn.addEventListener("click", () => {
             renamingStudyId = s.id;
             renderOverlayList();
-            // Fokus setzen passiert gleich beim Input (siehe unten)
+            // Focus is set when the input appears (see above)
         });
         actions.appendChild(renameBtn);
 
         const openBtn = document.createElement("button");
         openBtn.className = "iconbtn";
         openBtn.type = "button";
-        openBtn.title = "Öffnen";
+        openBtn.title = "Open";
         openBtn.textContent = "↩";
         openBtn.addEventListener("click", () => {
             selectStudy(s.id);
@@ -390,10 +410,10 @@ function renderOverlayList() {
         const delBtn = document.createElement("button");
         delBtn.className = "iconbtn";
         delBtn.type = "button";
-        delBtn.title = "Löschen";
+        delBtn.title = "Delete";
         delBtn.textContent = "🗑";
         delBtn.addEventListener("click", () => {
-            const ok = window.confirm(`Eröffnung löschen: "${s.name}"?`);
+            const ok = window.confirm(`Delete opening: "${s.name}"?`);
             if (!ok) return;
             deleteStudy(s.id);
             renderOverlayList();
@@ -421,6 +441,7 @@ function closeOverlay() {
     overlayEl.setAttribute("aria-hidden", "true");
 }
 
+// Switch to the given study; save current study PGN before switching
 function selectStudy(id) {
     // Save current study's PGN into its record before switching
     const current = getActiveStudy();
@@ -518,12 +539,13 @@ newStudyForm?.addEventListener("submit", (e) => {
     commitFromGame();
     goToPly(0, { save: false });
 
-    applyStudyDefaults(s);   // <- Orientierung, siehe Punkt 2
+    applyStudyDefaults(s);   // <- orientation, see above
     closeNewStudyForm();
     closeOverlay();
 });
 
 /* ---------- Timeline navigation ---------- */
+// Timeline navigation: set viewPly and re-render the board.
 function goToPly(ply, { save = false } = {}) {
     viewPly = clampPly(ply, fullLine.length);
     setGameToPly(viewPly);
@@ -538,6 +560,8 @@ function goNextPly() {
 }
 
 /* ---------- Master line commit from game ---------- */
+// Update fullLine/fullPgn from the `game` object and let core.applyCommit
+// compute viewPly/branching details.
 function commitFromGame() {
     fullLine = game.history({ verbose: true });
     fullPgn = game.pgn();
@@ -546,6 +570,7 @@ function commitFromGame() {
 }
 
 /* ---------- FEN input ---------- */
+// Try to load a FEN string; validate and use sloppy fallback if needed.
 function applyFenFromInput() {
     exitPromotion();
 
@@ -674,7 +699,7 @@ copyPgnBtn.addEventListener("click", async () => {
         copyPgnBtn.textContent = "✓";
         setTimeout(() => (copyPgnBtn.textContent = "Export PGN"), 800);
     } catch {
-        window.prompt("PGN kopieren (Strg+C):", pgn);
+        window.prompt("Copy PGN (Ctrl+C):", pgn);
     }
 });
 

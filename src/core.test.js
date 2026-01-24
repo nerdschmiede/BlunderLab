@@ -349,3 +349,4 @@ describe("lichessAnalysisUrlFromPgn", () => {
         expect(url).toBe("https://lichess.org/analysis/pgn/1.e4+e5+2.Nf3");
     });
 });
+
