@@ -20,7 +20,10 @@
 
     <!-- Mode toggle row: dedicated full-width row directly under the board -->
     <div class="mode-row">
-        <div id="modeToggleBtn" role="group" aria-label="Mode toggle"></div>
+        <div class="segmented-toggle" role="group" aria-label="Mode">
+            <button id="editBtn" type="button" class="iconbtn" aria-pressed="true">Edit</button>
+            <button id="trainBtn" type="button" class="iconbtn" aria-pressed="false">Train</button>
+        </div>
     </div>
 
     <div class="pgnline" id="pgnLine">

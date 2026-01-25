@@ -22,6 +22,18 @@
 
     /* Promo dimmer (board overlay) */
     --promo-dim: rgba(0, 0, 0, 0.45);
+
+    /* UI theme (dark) */
+    --ui-bg: #0f1115;
+    --ui-panel: #151923;
+    --ui-text: #e7eaf0;
+    --ui-muted: #a7afbf;
+    --ui-border: rgba(255,255,255,.10);
+    --ui-shadow: 0 10px 30px rgba(0,0,0,.35);
+    --ui-focus: #6aa6ff;
+
+    --coord-size: clamp(10px, calc(var(--board-max) / 30), 16px);
+
 }
 
 /* Landscape tweak */
@@ -42,9 +54,9 @@ html, body {
 body {
     margin: 0;
     padding: var(--pad);
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    background: #fafafa;
-    color: #111;
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* ---------- Page Layout ---------- */
@@ -85,6 +97,7 @@ body {
     gap: 12px;
     flex-wrap: wrap;
     margin: 0 auto;
+
 }
 
 /* Buttons */
@@ -92,8 +105,9 @@ body {
     width: 52px;
     height: 52px;
     border-radius: 14px;
-    border: 1px solid rgba(0, 0, 0, 0.15);
-    background: #fff;
+    background: var(--ui-panel);
+    color: var(--ui-text);
+    border: 1px solid var(--ui-border);
     font-size: 22px;
     line-height: 1;
     cursor: pointer;
@@ -109,7 +123,9 @@ body {
     height: 40px;
     font-size: 0.9rem;
     border-radius: 12px;
-    border: 1px solid rgba(0, 0, 0, 0.15)
+    background: var(--ui-panel);
+    color: var(--ui-text);
+    border: 1px solid var(--ui-border);
 }
 
 
@@ -120,8 +136,9 @@ body {
     padding: 10px 12px;
     margin: 0 auto;
     border-radius: 12px;
-    border: 1px solid rgba(0, 0, 0, 0.15);
-    background: #fff;
+    background: var(--ui-panel);
+    color: var(--ui-text);
+    border: 1px solid var(--ui-border);
     font-size: 13px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -149,13 +166,28 @@ cg-board {
 }
 
 /* ---------- Chessground: Coordinates (ranks on the right) ---------- */
+.cg-wrap coords{
+    font-size: var(--coord-size);
+    line-height: 1;
+}
+
 .cg-wrap coords.ranks.left { display: none !important; }
 
 .cg-wrap coords.ranks {
     left: auto !important;
     right: -4px !important;   /* tweak; set to 0 if you want strict alignment */
-    top: -20px;
-    align-items: flex-start;
+    top: 0 !important;    /* align with top of board */
+
+}
+
+.cg-wrap coords.files {
+    bottom: -2px;
+    left: 0;
+    flex-flow: row;
+    width: 100%;
+    height: 16px;
+    text-transform: uppercase;
+    text-align: center;
 }
 
 /* =========================================================
@@ -226,8 +258,9 @@ cg-board {
     width: 100%;
     padding: 10px 12px;
     border-radius: 12px;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    background: #fff;
+    background: var(--ui-panel);
+    color: var(--ui-text);
+    border: 1px solid var(--ui-border);
     font-size: 13px;
     line-height: 1.6;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -256,7 +289,7 @@ cg-board {
 .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.35);
+    background: rgba(0,0,0,0.55);
     display: grid;
     place-items: end center;
     padding: var(--pad);
@@ -265,11 +298,12 @@ cg-board {
 
 .sheet {
     width: min(100%, var(--board-max));
-    background: #fff;
+    background: var(--ui-panel);                 /* <- war #fff */
+    color: var(--ui-text);                       /* <- neu */
     border-radius: 16px;
-    border: 1px solid rgba(0,0,0,0.12);
+    border: 1px solid var(--ui-border);          /* <- war rgba(0,0,0,0.12) */
     padding: 12px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+    box-shadow: var(--ui-shadow);                /* <- war 0 12px... */
 }
 
 .sheet-header {
@@ -302,8 +336,9 @@ cg-board {
     gap: 10px;
     padding: 10px 12px;
     border-radius: 12px;
-    border: 1px solid rgba(0,0,0,0.12);
-    background: #fafafa;
+    border: 1px solid var(--ui-border);
+    background: rgba(255,255,255,.04);
+    color: var(--ui-text);
 }
 
 .study-meta {
@@ -312,7 +347,7 @@ cg-board {
 }
 
 .study-name { font-weight: 600; }
-.study-sub  { font-size: 12px; opacity: 0.75; }
+.study-sub { font-size: 12px; color: var(--ui-muted); opacity: 1; }
 
 .study-item .iconbtn { width: 44px; height: 44px; border-radius: 12px; }
 
@@ -328,14 +363,16 @@ cg-board {
 .seg-btn {
     height: 44px;
     border-radius: 12px;
-    border: 1px solid rgba(0,0,0,0.12);
-    background: #fafafa;
+    background: var(--ui-panel);
+    color: var(--ui-text);
+    border: 1px solid var(--ui-border);
     font: inherit;
 }
 
 .seg-btn.active {
-    background: #fff;
-    border-color: rgba(0,0,0,0.25);
+    background: rgba(255,255,255,.10);
+    border-color: rgba(255,255,255,.18);
+    color: var(--ui-text);
     font-weight: 600;
 }
 
@@ -355,15 +392,17 @@ cg-board {
     height: 44px;
     padding: 0 14px;
     border-radius: 12px;
-    border: 1px solid rgba(0,0,0,0.12);
-    background: #fafafa;
+    background: var(--ui-panel);
+    color: var(--ui-text);
+    border: 1px solid var(--ui-border);
     font: inherit;
     white-space: nowrap;
 }
 
 .btn.primary {
-    background: #fff;
-    border-color: rgba(0,0,0,0.25);
+    background: rgba(255,255,255,.10);
+    border-color: rgba(255,255,255,.18);
+    color: var(--ui-text);
     font-weight: 600;
 }
 
@@ -407,14 +446,15 @@ cg-board {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #fafafa;
-    border: 1px solid rgba(0,0,0,0.12);
+    background: transparent;
+    color: var(--ui-muted);
+    border: 1px solid transparent;
 }
 
 .segmented-toggle .iconbtn.active {
-    background: #fff;
-    border-color: rgba(0,0,0,0.25);
-    font-weight: 600;
+    background: rgba(255,255,255,.08);
+    color: var(--ui-text);
+    border-color: rgba(255,255,255,.12);
 }
 
 .segmented-toggle .iconbtn:focus {
@@ -450,6 +490,3 @@ cg-board {
     .segment-toggle .iconbtn, .segmented-toggle .iconbtn { min-width: 84px; }
 }
 
-/* Ensure mode row doesn't conflict with control bar spacing */
-.controls { margin-top: 4px; }
-/* small gap between controls and mode row */

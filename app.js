@@ -38,6 +38,8 @@ const STORAGE_ACTIVE_STUDY_KEY = "blunderlab.activeStudyId";
 /* ---------- DOM ---------- */
 // References to DOM elements — optional event listeners will still work if an element is missing.
 const boardEl = document.getElementById("board");
+const editBtn = document.querySelector('#editBtn');
+const trainBtn = document.querySelector('#trainBtn');
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const flipBtn = document.getElementById("flipBtn");
@@ -97,69 +99,44 @@ let lastUserAnimMs = 0;
 // Minimum pause between end of user's animation and opponent autoplay (ms)
 const OPPONENT_PAUSE_MS = 300;
 
-// Wire up segmented mode toggle: two equal buttons "Edit" and "Train"
-if (modeToggleBtn) {
-    // Clear any existing content and build two buttons
-    modeToggleBtn.innerHTML = "";
-    modeToggleBtn.classList.add('segmented-toggle');
 
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'iconbtn';
-    editBtn.textContent = 'Edit';
-    editBtn.setAttribute('aria-pressed', 'false');
+/* ---------- Toggle Buttons Edit&Train ---------- */
+function renderModeButtons() {
+    const isEdit = mode === 'edit';
+    editBtn.classList.toggle('active', isEdit);
+    editBtn.setAttribute('aria-pressed', String(isEdit));
 
-    const trainBtn = document.createElement('button');
-    trainBtn.type = 'button';
-    trainBtn.className = 'iconbtn';
-    trainBtn.textContent = 'Train';
-    trainBtn.setAttribute('aria-pressed', 'false');
-
-    // Helper to update visuals
-    const updateModeButtons = () => {
-        if (mode === 'train') {
-            trainBtn.classList.add('active');
-            trainBtn.setAttribute('aria-pressed', 'true');
-            editBtn.classList.remove('active');
-            editBtn.setAttribute('aria-pressed', 'false');
-        } else {
-            editBtn.classList.add('active');
-            editBtn.setAttribute('aria-pressed', 'true');
-            trainBtn.classList.remove('active');
-            trainBtn.setAttribute('aria-pressed', 'false');
-        }
-    };
-
-    editBtn.addEventListener('click', () => {
-        if (mode === 'edit') return;
-        mode = 'edit';
-        updateModeButtons();
-        // no additional action needed for edit mode
-        stopAutoplay();
-        // ensure UI reflects new mode
-        sync({ save: false });
-    });
-
-    trainBtn.addEventListener('click', () => {
-        if (mode === 'train') return;
-        mode = 'train';
-        updateModeButtons();
-
-        // When entering train mode, always reset view to start (ply 0) and begin autoplay as before
-        try {
-            goToPly(0);
-            autoplayUntilUsersTurn({ delayMs: 500 });
-        } catch (e) {}
-    });
-
-    // Append buttons into the container
-    modeToggleBtn.appendChild(editBtn);
-    modeToggleBtn.appendChild(trainBtn);
-
-    // Initialize visuals according to current mode
-    updateModeButtons();
+    trainBtn.classList.toggle('active', !isEdit);
+    trainBtn.setAttribute('aria-pressed', String(!isEdit));
 }
 
+function onEditClick() {
+    if (mode === 'edit') return;
+    mode = 'edit';
+    renderModeButtons();
+
+    stopAutoplay();
+    sync({ save: false });
+}
+
+function onTrainClick() {
+    if (mode === 'train') return;
+    mode = 'train';
+    renderModeButtons();
+
+    try {
+        goToPly(0);
+        autoplayUntilUsersTurn({ delayMs: 500 });
+    } catch (e) {}
+}
+
+if (editBtn && trainBtn) {
+    editBtn.addEventListener('click', onEditClick);
+    trainBtn.addEventListener('click', onTrainClick);
+
+    // Optional: only needed if mode might be loaded from storage and not "edit" by default
+    renderModeButtons();
+}
 // ---------------- Persistence helpers ----------------
 function loadStudiesFromStorage() {
     try {
@@ -902,6 +879,7 @@ const setGameToPlyTrain = (p) => {
 const ground = Chessground(boardEl, {
     fen: game.fen(),
     orientation,
+    coordinates: true,
     highlight: { check: true, lastMove: true },
     movable: { free: false, color: game.turn() === "w" ? "white" : "black", dests: calcDests(game) },
     events: {
