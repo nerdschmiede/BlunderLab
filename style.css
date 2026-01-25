@@ -6,6 +6,9 @@
    - PGN clickable line
    ========================================================= */
 
+*, *::before, *::after { box-sizing: border-box; }
+
+
 /* ---------- Theme / Variables ---------- */
 :root {
     --pad: 12px;
@@ -38,8 +41,28 @@
 
 /* Landscape tweak */
 @media (orientation: landscape) {
-    :root { --board-max: 90vmin; }
+    :root { --board-max: 100vmin; }
 }
+@media (orientation: portrait) {
+    body { margin: 0; }
+
+    /* common wrappers that often add side padding */
+    #app, main, .app, .container, .page, .layout {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        max-width: none !important;
+        width: 100%;
+    }
+
+    .board {
+        width: 100%;
+        max-width: none;
+        margin-left: 0;
+        margin-right: 0;
+    }
+}
+
+
 
 /* Global box sizing */
 *, *::before, *::after { box-sizing: border-box; }

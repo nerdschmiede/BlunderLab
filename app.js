@@ -962,7 +962,7 @@ const ground = Chessground(boardEl, {
                     return mv;
                 };
 
-                handleTrainingMove({
+                const ok = handleTrainingMove({
                     fullLine,
                     viewPly,
                     studyColor: getActiveStudy()?.color ?? "white",
@@ -970,7 +970,16 @@ const ground = Chessground(boardEl, {
                     setGameToPly: setGameToPlyTrain,
                 }, moveObj);
 
+                // Wenn falsch/abgelehnt: Stellung wiederherstellen und im Train bleiben
+                if (!ok) {
+                    try { setGameToPlyTrain(viewPly); } catch (e) {}
+                    // Falls dein UI nicht automatisch nachzieht, einmal sync:
+                    try { sync({ save: false }); } catch (e) {}
+                    return;
+                }
+
                 return;
+
             }
 
             // --- Edit mode only below here ---
