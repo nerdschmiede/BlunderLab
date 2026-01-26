@@ -271,8 +271,6 @@ function applyStudyDefaults(study) {
 }
 
 
-
-
 /* ---------- Promotion UI ---------- */
 // Ensure a semi-transparent dimmer under promo pieces exists (visual only).
 function ensurePromoDimmer() {
@@ -673,65 +671,6 @@ function autoplayUntilUsersTurn({ delayMs = 350 } = {}) {
             const exp = fullLine[viewPly];
             if (!exp) return; // no more mainline
 
-            // If Chessground is available and move is simple (no special promo UI), ask it to animate the move.
-            const useGroundMove = typeof ground !== 'undefined' && ground && !exp.promotion;
-
-            if (useGroundMove) {
-                // declare startDelay here so it's visible outside the try block
-                let startDelay = OPPONENT_PAUSE_MS;
-                try {
-                    // Decide delay so that if a user just moved, we wait until their animation + pause.
-                    const now = Date.now();
-                    startDelay = (pendingOpponentStartAt && pendingOpponentStartAt > now) ? (pendingOpponentStartAt - now) : OPPONENT_PAUSE_MS;
-
-                    // Clear pending time since we're going to consume it
-                    pendingOpponentStartAt = 0;
-
-                    // Let chessground animate the piece from -> to after startDelay
-                    if (startDelay > 0) {
-                        setTimeout(() => ground.move(exp.from, exp.to), startDelay);
-                    } else {
-                        ground.move(exp.from, exp.to);
-                    }
-                } catch (e) {
-                    // Fallback to instant goToPly on error
-                    goToPly(viewPly + 1, { save: false });
-                }
-
-                // Advance the cursor immediately to keep internal logic consistent, but only after the visual starts
-                // If we delayed the visual, increment after the delay so lastMove highlights stay consistent.
-                const delayToInc = startDelay;
-                if (delayToInc > 0) {
-                    setTimeout(() => { viewPly = clampPly(viewPly + 1, fullLine.length); }, delayToInc);
-                } else {
-                    viewPly = clampPly(viewPly + 1, fullLine.length);
-                }
-
-                // After the animation finishes, update the chess.js state and sync the UI.
-                const animMs = (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
-                const wait = Math.max(delayMs, animMs + 60) + startDelay;
-
-                autoplayTimer = setTimeout(() => {
-                    if (mode !== "train") return;
-
-                    // Apply move to chess.js (no commitFromGame; this is a replay)
-                    try {
-                        game.move({ from: exp.from, to: exp.to, promotion: exp.promotion });
-                    } catch (e) {
-                        // ignore - keep game consistent via goToPly if needed
-                        setGameToPly(viewPly);
-                    }
-
-                    // Mirror game to Chessground/UI after the move
-                    minimalSync({ save: false });
-
-                    // schedule next step
-                    step();
-                }, wait);
-
-                return;
-            }
-
             // Fallback: advance via goToPly (instant change handled by sync which may animate)
             goToPly(viewPly + 1, { save: false });
 
@@ -979,12 +918,21 @@ function handleTrainMove(from, to) {
         return;
     }
 
+    const studyColor = getActiveStudy()?.color ?? "white";
+
+    // Special case: user trains Black, but at the start White must move first.
+    // If a move event happens before it's the user's turn, just autoplay to user's turn and ignore this move.
+    if (studyColor === "black" && game.turn() === "w") {
+        try { autoplayUntilUsersTurn({ delayMs: 0 }); } catch (e) {}
+        return;
+    }
+
     const moveObj = { from, to };
 
     const ok = handleTrainingMove({
         fullLine,
         viewPly,
-        studyColor: getActiveStudy()?.color ?? "white",
+        studyColor,
         makeMove: makeTrainingMakeMoveCb(moveObj),
         setGameToPly: setGameToPlyTrain,
     }, moveObj);
@@ -1064,8 +1012,8 @@ const ground = Chessground(boardEl, {
                 return;
             }
             handleEditMove(from, to);
-        },
 
+        },
 
         select: handlePromotionSelect(),
     },
