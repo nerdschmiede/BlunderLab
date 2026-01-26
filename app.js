@@ -1,22 +1,24 @@
-import { Chessground } from "chessground";
-import { Chess } from "chess.js";
+import {Chessground} from "chessground";
+import {Chess} from "chess.js";
 
 import {
-    promoSquares,
-    buildPgnHtml,
-    nextViewPly,
-    computeLastMove,
-    applyEditInPast,
     applyCommit,
+    applyEditInPast,
     applyJump,
+    buildPgnHtml,
     clampPly,
-    pgnHasFenHeader,
+    computeLastMove,
     createStudy,
-    upsertStudy,
+    isUsersTurn,
+    lichessAnalysisUrl,
+    migrateLegacyPgn,
+    nextViewPly,
+    pgnHasFenHeader,
     pickStudy,
-    migrateLegacyPgn, lichessAnalysisUrl, isUsersTurn,
+    promoSquares,
+    upsertStudy,
 } from "./src/core.js";
-import { handleTrainingMove } from "./src/training.js";
+import {handleTrainingMove} from "./src/training.js";
 
 
 /* =========================================================
@@ -59,7 +61,6 @@ const newStudyName = document.getElementById("newStudyName");
 const pickWhiteBtn = document.getElementById("pickWhite");
 const pickBlackBtn = document.getElementById("pickBlack");
 const cancelNewStudyBtn = document.getElementById("cancelNewStudy");
-const modeToggleBtn = document.getElementById("modeToggleBtn");
 
 
 /* ---------- Game state ---------- */
@@ -872,6 +873,177 @@ const setGameToPlyTrain = (p) => {
     minimalSync({ save: false });
 };
 
+function getAnimMs() {
+    return (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
+}
+
+
+function applyMoveToGame(m) {
+    // Apply the move to chess.js synchronously so internal state (fullLine, viewPly)
+    // is updated for any immediate logic/tests.
+    let mv = null;
+    try {
+        mv = game.move(m);
+    } catch {
+        return null;
+    }
+    if (!mv) return null;
+
+    // Update master line state immediately
+    commitFromGame();
+
+    return mv;
+}
+
+function scheduleUserPostMoveSync() {
+    const animMs = getAnimMs();
+    const animMargin = 60;
+
+    setTimeout(() => {
+        minimalSync({ save: true });
+    }, animMs + animMargin);
+}
+
+function markOpponentStartWindow() {
+    const animMs = getAnimMs();
+    pendingOpponentStartAt = Date.now() + animMs + OPPONENT_PAUSE_MS;
+    lastUserMoveAt = Date.now();
+    lastUserAnimMs = animMs;
+}
+
+function scheduleOpponentMoveAnimation(m, { userMoveHandled, userMoveKey }) {
+    const animMs = getAnimMs();
+    const animMargin = 60;
+    const opponentPause = OPPONENT_PAUSE_MS;
+
+    const key = `${m.from}-${m.to}`;
+    const now = Date.now();
+
+    const desiredFromUser = lastUserMoveAt ? (lastUserMoveAt + lastUserAnimMs + opponentPause) : 0;
+
+    let startDelay;
+    if (userMoveHandled && key !== userMoveKey && desiredFromUser > now) {
+        startDelay = desiredFromUser - now;
+    } else {
+        startDelay = (pendingOpponentStartAt && pendingOpponentStartAt > now)
+            ? (pendingOpponentStartAt - now)
+            : opponentPause;
+    }
+
+    pendingOpponentStartAt = 0;
+    lastUserMoveAt = 0;
+    lastUserAnimMs = 0;
+
+    setTimeout(() => {
+        try { ground.move(m.from, m.to); } catch {}
+    }, startDelay);
+
+    setTimeout(() => {
+        minimalSync({ save: true });
+    }, startDelay + animMs + animMargin);
+}
+
+
+function makeTrainingMakeMoveCb(userMoveObj) {
+    const userMoveKey = `${userMoveObj.from}-${userMoveObj.to}`;
+    let userMoveHandled = false;
+
+    return (m) => {
+        const mv = applyMoveToGame(m);
+        if (!mv) return null;
+
+        const key = `${m.from}-${m.to}`;
+
+        if (!userMoveHandled && key === userMoveKey) {
+            userMoveHandled = true;
+            scheduleUserPostMoveSync();
+            markOpponentStartWindow();
+        } else {
+            scheduleOpponentMoveAnimation(m, { userMoveHandled, userMoveKey });
+        }
+
+        return mv;
+    };
+}
+
+
+function resetTrainPosition() {
+    try { setGameToPlyTrain(viewPly); } catch {}
+    try { sync({ save: false }); } catch {}
+}
+
+
+function handleTrainMove(from, to) {
+    if (isPromotionMove(from, to)) {
+        enterPromotion(from, to);
+        return;
+    }
+
+    const moveObj = { from, to };
+
+    const ok = handleTrainingMove({
+        fullLine,
+        viewPly,
+        studyColor: getActiveStudy()?.color ?? "white",
+        makeMove: makeTrainingMakeMoveCb(moveObj),
+        setGameToPly: setGameToPlyTrain,
+    }, moveObj);
+
+    if (!ok) resetTrainPosition();
+}
+
+function handleEditMove(from, to) {
+    // --- Edit mode only below here ---
+
+    // If in the past: cut future and replay truncated line before applying new move
+    const edited = applyEditInPast(fullLine, viewPly);
+    if (edited.line.length !== fullLine.length) {
+        fullLine = edited.line;
+        viewPly = edited.viewPly;
+        setGameToPly(viewPly);
+    }
+
+    if (isPromotionMove(from, to)) {
+        enterPromotion(from, to);
+        return;
+    }
+
+    const mv = game.move({from, to});
+    if (!mv) {
+        sync({save: false});
+        return;
+    }
+
+    commitFromGame();
+    sync({save: true});
+}
+
+function handlePromotionSelect() {
+    return (key) => {
+        if (!promoPick) return;
+
+        const idx = promoPick.squares.indexOf(key);
+        if (idx === -1) return;
+
+        const promoByIdx = ["q", "n", "r", "b"][idx];
+
+        const mv = game.move({
+            from: promoPick.from,
+            to: promoPick.to,
+            promotion: promoByIdx,
+        });
+
+        exitPromotion();
+
+        if (!mv) {
+            sync({save: false});
+            return;
+        }
+
+        commitFromGame();
+        sync({save: true});
+    };
+}
 
 /* =========================================================
    Chessground init
@@ -888,144 +1060,14 @@ const ground = Chessground(boardEl, {
 
             // Training mode: delegate first (NO edit-in-past logic)
             if (mode === "train") {
-                if (isPromotionMove(from, to)) {
-                    enterPromotion(from, to);
-                    return;
-                }
-
-                const moveObj = { from, to };
-
-                // Track user-originated move so we can delay UI sync differently for user vs auto moves
-                const userMoveKey = `${moveObj.from}-${moveObj.to}`;
-                let userMoveHandled = false;
-
-                const makeMoveCb = (m) => {
-                    // Apply the move to chess.js synchronously so internal state (fullLine, viewPly)
-                    // is updated for any immediate logic/tests.
-                    let mv = null;
-                    try { mv = game.move(m); } catch { return null; }
-                    if (!mv) return null;
-
-                    // Update master line state immediately
-                    commitFromGame();
-
-                    const key = `${m.from}-${m.to}`;
-                    const animMs = (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
-                    const animMargin = 60; // safety margin after animation
-                    const opponentPause = OPPONENT_PAUSE_MS; // pause before opponent animation starts
-
-                    if (!userMoveHandled && key === userMoveKey) {
-                        // User's own move: Chessground already performed the visual change (drag/release).
-                        // Don't call ground.move again (that can cause a visual jump). Instead delay minimalSync
-                        // until after the board's animation finishes so pieces appear smooth.
-                        userMoveHandled = true;
-
-                        // schedule minimalSync after the user's animation finished
-                        setTimeout(() => { minimalSync({ save: true }); }, animMs + animMargin);
-
-                        // set the earliest time an opponent animation may start: after user's animation + opponentPause
-                        pendingOpponentStartAt = Date.now() + animMs + opponentPause;
-
-                        // record last user move time + animation to compute exact pause later
-                        lastUserMoveAt = Date.now();
-                        lastUserAnimMs = animMs;
-                    } else {
-                        // Auto-played opponent move: decide when to start the opponent animation.
-                        // Compute startDelay relative to now and pendingOpponentStartAt.
-                        const now = Date.now();
-                        let startDelay;
-
-                        // Desired start time if there was a recent user move
-                        const desiredFromUser = lastUserMoveAt ? (lastUserMoveAt + lastUserAnimMs + opponentPause) : 0;
-
-                        if (userMoveHandled && key !== userMoveKey && desiredFromUser > now) {
-                            // Opponent move immediately follows user's move in same handler -> wait until user's animation finished + pause
-                            startDelay = desiredFromUser - now;
-                        } else {
-                            // Otherwise honor any pendingOpponentStartAt or fallback to simple opponentPause
-                            startDelay = (pendingOpponentStartAt && pendingOpponentStartAt > now) ? (pendingOpponentStartAt - now) : opponentPause;
-                        }
-
-                        // Clear timing markers after consumption
-                        pendingOpponentStartAt = 0;
-                        lastUserMoveAt = 0;
-                        lastUserAnimMs = 0;
-
-                        setTimeout(() => {
-                            try { ground.move(m.from, m.to); } catch (e) { /* ignore */ }
-                        }, startDelay);
-
-                        // After opponent animation completes, update UI. Opponent animation duration = animMs.
-                        setTimeout(() => { minimalSync({ save: true }); }, startDelay + animMs + animMargin);
-                    }
-
-                    return mv;
-                };
-
-                const ok = handleTrainingMove({
-                    fullLine,
-                    viewPly,
-                    studyColor: getActiveStudy()?.color ?? "white",
-                    makeMove: makeMoveCb,
-                    setGameToPly: setGameToPlyTrain,
-                }, moveObj);
-
-                // Wenn falsch/abgelehnt: Stellung wiederherstellen und im Train bleiben
-                if (!ok) {
-                    try { setGameToPlyTrain(viewPly); } catch (e) {}
-                    // Falls dein UI nicht automatisch nachzieht, einmal sync:
-                    try { sync({ save: false }); } catch (e) {}
-                    return;
-                }
-
-                return;
-
-            }
-
-            // --- Edit mode only below here ---
-
-            // If in the past: cut future and replay truncated line before applying new move
-            const edited = applyEditInPast(fullLine, viewPly);
-            if (edited.line.length !== fullLine.length) {
-                fullLine = edited.line;
-                viewPly = edited.viewPly;
-                setGameToPly(viewPly);
-            }
-
-            if (isPromotionMove(from, to)) {
-                enterPromotion(from, to);
+                handleTrainMove(from, to);
                 return;
             }
-
-            const mv = game.move({ from, to });
-            if (!mv) { sync({ save: false }); return; }
-
-            commitFromGame();
-            sync({ save: true });
+            handleEditMove(from, to);
         },
 
 
-        select: (key) => {
-            if (!promoPick) return;
-
-            const idx = promoPick.squares.indexOf(key);
-            if (idx === -1) return;
-
-            const promoByIdx = ["q", "n", "r", "b"][idx];
-
-            const mv = game.move({
-                from: promoPick.from,
-                to: promoPick.to,
-                promotion: promoByIdx,
-            });
-
-            exitPromotion();
-
-            if (!mv) { sync({ save: false }); return; }
-
-            commitFromGame();
-            sync({ save: true });
-        },
+        select: handlePromotionSelect(),
     },
 });
 
