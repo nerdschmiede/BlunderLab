@@ -86,7 +86,6 @@ body {
 .page {
     display: grid;
     justify-items: center;
-    gap: 12px;
 }
 
 .title {
@@ -94,12 +93,45 @@ body {
     font-size: 22px;
 }
 
+/* ---------- PGN line (single line, scrolls left) ---------- */
+
+.board-stack {
+    width: min(92vw, 520px);
+    margin: 0 auto;
+    overflow: hidden;   /* fallback clipping */
+    min-width: 0;       /* wichtig bei flex parents */
+}
+
+#pgn-line {
+    width: 100%;
+    min-height: 24px;
+    line-height: 24px;
+
+    overflow: hidden;
+    white-space: nowrap;
+
+    /* LTR normal */
+    direction: ltr;
+
+    margin: 0 0 1px 0;
+
+    /* optional: leichtes Padding, verhindert "kleben" am Rand */
+    padding: 0 2px;
+
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 14px;
+}
+
+
+
+
 /* ---------- Board + Controls ---------- */
 .board {
     width: min(100%, var(--board-max));
     aspect-ratio: 1 / 1;
-    margin: 0 auto;
-    margin-bottom: 6px; /* reduce gap below board so toggle sits close */
+    margin: 0;
+    padding: 0;
+    line-height: 0;
 }
 
 .controls {
@@ -122,7 +154,6 @@ body {
     margin: 0 auto;
 
 }
-
 /* Buttons */
 .iconbtn {
     width: 52px;
@@ -269,42 +300,6 @@ cg-board {
 @media (prefers-reduced-motion: reduce) {
     .cg-wrap square.promo { animation: none; }
 }
-
-/* ---------- PGN line ---------- */
-.pgnline {
-    width: min(100%, var(--board-max));
-    margin: 0 auto;
-    margin-top: 4px; /* PGN line should sit tight under the mode row */
-}
-
-#pgn {
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: var(--ui-panel);
-    color: var(--ui-text);
-    border: 1px solid var(--ui-border);
-    font-size: 13px;
-    line-height: 1.6;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    overflow-wrap: anywhere;
-}
-
-#pgn .num { opacity: 0.55; margin-right: 4px; }
-
-#pgn .mv {
-    display: inline-block;
-    padding: 2px 6px;
-    margin: 2px;
-    border-radius: 8px;
-    cursor: pointer;
-    user-select: none;
-}
-
-#pgn .mv:hover  { background: rgba(0, 0, 0, 0.06); }
-#pgn .mv.active { background: rgba(0, 0, 0, 0.12); }
-
-.invalid { outline: 2px solid currentColor; }
 
 /* ---------- Overlay (Study Picker) ---------- */
 .overlay.hidden { display: none; }

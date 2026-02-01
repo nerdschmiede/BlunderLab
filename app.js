@@ -1,289 +1,303 @@
-import {Chessground} from "chessground";
 import {Chess} from "chess.js";
+import {Chessground} from "chessground";
 
 import {
-    applyCommit,
-    applyEditInPast,
-    applyJump,
-    buildPgnHtml,
-    clampPly,
-    computeLastMove,
-    createStudy,
-    isUsersTurn,
-    lichessAnalysisUrl,
-    migrateLegacyPgn,
-    nextViewPly,
-    pgnHasFenHeader,
-    pickStudy,
-    promoSquares,
-    upsertStudy,
-} from "./src/core.js";
-import {handleTrainingMove} from "./src/training.js";
+    createTreeSession,
+    createRoot,
+    addVariationAndGo,
+    goBack,
+    goForwardIfExists, currentNode,
+} from "./src/tree.js";
 
+// -------------------- DOM --------------------
+const pgnLineEl = document.getElementById("pgn-line");
 
-/* =========================================================
-   BlunderLab – app.js (refactored to core state helpers)
-   - master line: fullLine (verbose moves)
-   - cursor: viewPly (0..fullLine.length)
-   - lastMove computed via core (single truth)
-   - branching in past via core applyEditInPast()
-   ========================================================= */
-
-// -------------------- Storage keys --------------------
-// Constants for localStorage keys. Important for migration and persistence.
-const STORAGE_PGN_KEY = "blunderlab.pgn";
-const STORAGE_ORIENTATION_KEY = "blunderlab.orientation";
-const STORAGE_STUDIES_KEY = "blunderlab.studies.v1";
-const STORAGE_ACTIVE_STUDY_KEY = "blunderlab.activeStudyId";
-
-
-/* ---------- DOM ---------- */
-// References to DOM elements — optional event listeners will still work if an element is missing.
 const boardEl = document.getElementById("board");
-const editBtn = document.querySelector('#editBtn');
-const trainBtn = document.querySelector('#trainBtn');
+
+const editBtn = document.getElementById("editBtn");
+const trainBtn = document.getElementById("trainBtn");
+
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const flipBtn = document.getElementById("flipBtn");
-const copyPgnBtn = document.getElementById("copyPgnBtn");
 const lichessBtn = document.getElementById("lichessBtn");
-const fenLine = document.getElementById("fenLine");
-const pgnEl = document.getElementById("pgn");
-const pgnInput = document.getElementById("pgnInput");
-const btnImportPgn = document.getElementById("btnImportPgn");
-const studiesBtn = document.getElementById("studiesBtn");
-const overlayEl = document.getElementById("overlay");
-const closeOverlayBtn = document.getElementById("closeOverlayBtn");
-const newStudyBtn = document.getElementById("newStudyBtn");
-const studyListEl = document.getElementById("studyList");
-const newStudyForm = document.getElementById("newStudyForm");
-const newStudyName = document.getElementById("newStudyName");
-const pickWhiteBtn = document.getElementById("pickWhite");
-const pickBlackBtn = document.getElementById("pickBlack");
-const cancelNewStudyBtn = document.getElementById("cancelNewStudy");
 
+// -------------------- App state --------------------
+let mode = "edit"; // "edit" | "train" (train is stub for now)
+let orientation = "white";
 
-/* ---------- Game state ---------- */
-// `game` is our chess engine (chess.js). All moves should be validated via this object.
-const game = new Chess();
-let orientation = localStorage.getItem(STORAGE_ORIENTATION_KEY) || "white";
+let game = new Chess();
+let ground = null;
 
-// Core states: master line (complete move list) and cursor (viewPly)
-let fullLine = [];   // verbose moves (master line)
-let viewPly = 0;     // 0..fullLine.length
-let fullPgn = "";    // PGN of master line
+// Tree session is the truth for the "current line"
+let treeSession = createTreeSession(createRoot());
 
-let newStudyColor = "white";
+// redo stack stores nodes we popped (navigation only)
+let redoStack = [];
 
-/* Promotion */
-// promoPick: when null => no promotion selection active
-let promoPick = null;        // { from, to, squares } | null
-let promoCustom = new Map(); // Map<square, "promo">
+// Promotion UI state
+let promoPick = null;      // { from, to, squares: [..] }
+let promoCustom = new Map();
 
-let studies = [];          // Array<Study>
-let activeStudyId = null;  // string | null
+// -------------------- Init --------------------
+initGround();
+wireUi();
 
-let renamingStudyId = null;
+renderModeButtons();
 
-// Mode: "edit" | "train" (default edit)
-let mode = "edit";
+// -------------------- Chessground init --------------------
+function initGround() {
+    ground = Chessground(boardEl, {
+        fen: game.fen(),
+        orientation,
+        coordinates: true,
+        highlight: {check: true, lastMove: true},
+        movable: {
+            free: false,
+            color: "white",
+            dests: calcDests(game),
+        },
+        events: {
+            move: onUserMove,
+            select: onBoardSelect,
+        },
+    });
 
-// When a user makes a move, we may want to delay the next auto-opponent animation
-// until the user's visual animation finished + a short pause. This timestamp (ms)
-// marks the earliest time the opponent animation should start.
-let pendingOpponentStartAt = 0;
-
-// Track the last user move timestamp and its animation duration so we can guarantee a visible pause
-let lastUserMoveAt = 0;
-let lastUserAnimMs = 0;
-
-// Minimum pause between end of user's animation and opponent autoplay (ms)
-const OPPONENT_PAUSE_MS = 300;
-
-
-/* ---------- Toggle Buttons Edit&Train ---------- */
-function renderModeButtons() {
-    const isEdit = mode === 'edit';
-    editBtn.classList.toggle('active', isEdit);
-    editBtn.setAttribute('aria-pressed', String(isEdit));
-
-    trainBtn.classList.toggle('active', !isEdit);
-    trainBtn.setAttribute('aria-pressed', String(!isEdit));
+    // promotion dimmer (optional visual)
+    ensurePromoDimmer();
 }
 
-function onEditClick() {
-    if (mode === 'edit') return;
-    mode = 'edit';
-    renderModeButtons();
+// -------------------- Move handling --------------------
+function onUserMove(from, to) {
+    if (promoPick) return;
 
-    stopAutoplay();
-    sync({save: false});
-}
-
-function onTrainClick() {
-    if (mode === 'train') return;
-    mode = 'train';
-    renderModeButtons();
-
-    try {
-        goToPly(0);
-        autoplayUntilUsersTurn({delayMs: 500});
-    } catch (e) {
-    }
-}
-
-if (editBtn && trainBtn) {
-    editBtn.addEventListener('click', onEditClick);
-    trainBtn.addEventListener('click', onTrainClick);
-
-    // Optional: only needed if mode might be loaded from storage and not "edit" by default
-    renderModeButtons();
-}
-
-// ---------------- Persistence helpers ----------------
-function loadStudiesFromStorage() {
-    try {
-        const raw = localStorage.getItem(STORAGE_STUDIES_KEY);
-        return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-        console.warn("Failed to parse studies:", e);
-        return [];
-    }
-}
-
-function saveStudiesToStorage() {
-    try {
-        localStorage.setItem(STORAGE_STUDIES_KEY, JSON.stringify(studies));
-        if (activeStudyId) localStorage.setItem(STORAGE_ACTIVE_STUDY_KEY, activeStudyId);
-    } catch (e) {
-        console.warn("Failed to save studies:", e);
-    }
-}
-
-function getActiveStudy() {
-    return pickStudy(studies, activeStudyId);
-}
-
-
-/* ---------- Persistence: auto-save PGN ---------- */
-
-// Save current `fullPgn` either into active study or as legacy PGN.
-function autoSavePgn() {
-    const s = getActiveStudy();
-
-    if (!s) {
-        // Fallback: keep legacy behavior so app still works without overlay state
-        try {
-            localStorage.setItem(STORAGE_PGN_KEY, fullPgn);
-        } catch (e) {
-            console.warn("Auto-save PGN failed:", e);
-        }
+    // Promotion: enter picker instead of making the move
+    if (isPromotionMove(from, to)) {
+        enterPromotion(from, to);
+        console.log("Promotion move, entering picker.");
         return;
     }
 
-    const now = Date.now();
-    const updated = {...s, pgn: fullPgn, updatedAt: now};
-    studies = upsertStudy(studies, updated);
-    saveStudiesToStorage();
-}
+    const mv = tryGameMove({from, to});
+    if (!mv) {
+        console.log("Illegal move:", from, to);
+        // illegal => restore visuals
+        syncBoardOnly();
 
-
-/* ---------- Chessground helpers ---------- */
-
-// Calculate chessground destinations mapping source -> [dest,...]
-function calcDests(chess) {
-    const dests = new Map();
-    const moves = chess.moves({verbose: true});
-    for (const m of moves) {
-        if (!dests.has(m.from)) dests.set(m.from, []);
-        dests.get(m.from).push(m.to);
+        return;
     }
-    return dests;
+
+    // Edit: persist to tree (follow existing or create new variation)
+    if (mode === "edit") {
+        addVariationAndGo(treeSession, {
+            from: mv.from,
+            to: mv.to,
+            promotion: mv.promotion,
+        });
+
+        // once we make a new move, redo history is invalid
+        redoStack = [];
+    } else {
+        console.warn("Train mode: Nothings happens yet on move.");
+    }
+
+    syncUi();
 }
 
-// Set `game` to the position after `ply` half-moves (0 = starting position).
-// Uses `fullLine` as the source of truth.
-function setGameToPly(ply) {
-    const p = clampPly(ply, fullLine.length);
-    game.reset();
+function onBoardSelect(key) {
+    if (!promoPick) return;
 
+    const idx = promoPick.squares.indexOf(key);
+    if (idx === -1) return;
+
+    const promotion = ["q", "n", "r", "b"][idx];
+
+    const mv = tryGameMove({
+        from: promoPick.from,
+        to: promoPick.to,
+        promotion,
+    });
+
+    exitPromotion();
+
+    if (!mv) {
+        syncBoardOnly();
+        return;
+    }
+
+    addVariationAndGo(treeSession, {
+        from: mv.from,
+        to: mv.to,
+        promotion: mv.promotion,
+    });
+
+    redoStack = [];
+    syncUi();
+}
+
+function tryGameMove(moveObj) {
     try {
-        for (let i = 0; i < p; i++) {
-            const m = fullLine[i];
-            game.move({from: m.from, to: m.to, promotion: m.promotion});
+        return game.move(moveObj);
+    } catch {
+        return null;
+    }
+}
+
+function movesToInlineText(moves) {
+    let out = [];
+    for (let i = 0; i < moves.length; i += 2) {
+        const no = i / 2 + 1;
+        const w = moves[i];
+        const b = moves[i + 1];
+        out.push(`${no}. ${w}${b ? " " + b : ""}`);
+    }
+    return out.join(" ");
+}
+
+// -------------------- Navigation: Undo/Redo via Tree path --------------------
+function undo() {
+    if (promoPick) return;
+
+    const cur = currentNode(treeSession);     // <-- session übergeben
+    if (cur === treeSession.root) return;
+
+    const res = goBack(treeSession);
+    if (!res.ok) return;
+
+    // erst NACH erfolgreichem goBack fürs redo merken
+    if (cur.move) redoStack.push(cur.move);
+
+    replaySessionToGame();
+    syncUi();
+}
+
+
+function redo() {
+    if (promoPick) return;
+
+    const mv = redoStack.pop();
+    if (!mv) return;
+
+    const res = goForwardIfExists(treeSession, mv);
+    if (!res.ok) return;
+
+    replaySessionToGame();
+    syncUi();
+}
+
+// -------------------- Replay (Tree -> Game/UI) --------------------
+function replaySessionToGame() {
+    game = new Chess();
+    for (const mv of getSessionMoves(treeSession)) {
+        const res = tryGameMove(mv);   // reuse!
+        if (!res) {
+            console.warn("Illegal move in tree:", mv);
+            break;
         }
-    } catch {
-        // Never let the app crash; restore starting position on error.
-        game.reset();
     }
 }
 
 
-// Purely checks from the current position whether a normal move would be a promotion.
-function isPromotionMove(from, to) {
-    const p = game.get(from);
-    if (!p || p.type !== "p") return false;
-    const rank = to[1];
-    return (p.color === "w" && rank === "8") || (p.color === "b" && rank === "1");
-}
-
-function cgColor(chessColor) {
-    return chessColor === "w" ? "white" : "black";
-}
-
-// ---------------- PGN Import ----------------
-// Try to load a PGN from text. On error, restore previous state.
-function applyPgnFromInput(pgnText) {
-    const text = (pgnText ?? "").trim();
-    if (!text) return false;
-
-    // Reject "From Position" PGNs (contain a FEN header)
-    if (pgnHasFenHeader(text)) return false;
-
-    // Snapshot current state so a bad PGN paste can't break anything
-    const beforePgn = game.pgn();
-
-    try {
-        // Replace state
-        game.reset();
-        game.loadPgn(text);
-    } catch {
-        // Restore exactly; keep app state (fullLine/viewPly/fullPgn) unchanged
-        game.reset();
-        try {
-            game.loadPgn(beforePgn);
-        } catch {
-        }
-        setGameToPly(viewPly);
-        sync({save: true});
-        return false;
+function getSessionMoves(session) {
+    // derives current mainline from session.path
+    const moves = [];
+    for (const node of session.path) {
+        if (node.move) moves.push(node.move);
     }
-
-    commitFromGame();
-    goToPly(fullLine.length, {save: true});
-    return true;
+    return moves;
 }
 
-
-// Apply study defaults (e.g. orientation)
-function applyStudyDefaults(study) {
-    const o = study.color === "black" ? "black" : "white";
-
-    // update the app-level orientation state
-    orientation = o;
-    try {
-        localStorage.setItem(STORAGE_ORIENTATION_KEY, o);
-    } catch {
-    }
-
-    // trigger a render path without saving
-    sync({save: false});
+// -------------------- Sync UI --------------------
+function syncUi() {
+    syncBoardOnly();
+    syncTextOnly();
+    updateUndoRedoState();
+    renderModeButtons();
+    logTree();
 }
 
+function scrollPgnLineToEnd() {
+    requestAnimationFrame(() => {
+        pgnLineEl.scrollLeft = pgnLineEl.scrollWidth;
+    });
+}
 
-/* ---------- Promotion UI ---------- */
+function syncPgnLine() {
+    if (!pgnLineEl) return;
 
-// Ensure a semi-transparent dimmer under promo pieces exists (visual only).
+    const moves = game.history(); // SAN
+    pgnLineEl.textContent = moves.length
+        ? movesToInlineText(moves)
+        : "";
+
+    scrollPgnLineToEnd();
+}
+
+function syncBoardOnly() {
+    const turnColor = game.turn() === "w" ? "white" : "black";
+
+    ground.set({
+        fen: game.fen(),
+        orientation,
+        movable: {
+            free: false,
+            color: mode === "edit" ? "both" : turnColor,
+            dests: calcDests(game),
+        },
+        highlight: {check: true, lastMove: true, custom: promoCustom},
+    });
+}
+
+function syncTextOnly() {
+    syncPgnLine();
+}
+
+function updateUndoRedoState() {
+    if (undoBtn) undoBtn.disabled = treeSession.path.length <= 1;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+
+// -------------------- Mode toggle --------------------
+function setMode(nextMode) {
+    if (mode === nextMode) return;
+    mode = nextMode;
+    renderModeButtons();
+
+    // Train is stub for now; later we’ll add logic here.
+}
+
+function renderModeButtons() {
+    if (!editBtn || !trainBtn) return;
+
+    const isTrain = mode === "train";
+
+    editBtn.classList.toggle("active", !isTrain);
+    editBtn.setAttribute("aria-pressed", String(!isTrain));
+
+    trainBtn.classList.toggle("active", isTrain);
+    trainBtn.setAttribute("aria-pressed", String(isTrain));
+}
+
+// -------------------- Flip / Lichess ----------------------------
+function flipBoard() {
+    orientation = orientation === "white" ? "black" : "white";
+    syncBoardOnly();
+}
+
+function openLichessAnalysis({myColor = "white"} = {}) {
+    // SAN-Liste bis zur aktuellen Position (genau dein "Weg")
+    const moves = game.history(); // z.B. ["e4","c5","Nf3",...]
+    const ply = moves.length;
+
+    // Lichess erwartet im /analysis/pgn/ Pfad die Moves, getrennt mit '+'
+    // Wichtig: jede SAN-Notation einzeln encoden (wegen #, +, etc.)
+    const pgnPath = moves.map(encodeURIComponent).join("+");
+
+    const url = `https://lichess.org/analysis/pgn/${pgnPath}?color=${myColor}#${ply}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+}
+
+// -------------------- Promotion UI (yours, kept minimal) --------------------
 function ensurePromoDimmer() {
     const wrap = boardEl.querySelector(".cg-wrap");
     if (!wrap) return;
@@ -295,13 +309,20 @@ function ensurePromoDimmer() {
     }
 }
 
-// Enter promotion selection: draw four pieces and lock normal moves.
+function isPromotionMove(from, to) {
+    const piece = game.get(from);
+    if (!piece || piece.type !== "p") return false;
+
+    const rank = to[1];
+    return (piece.color === "w" && rank === "8") || (piece.color === "b" && rank === "1");
+}
+
 function enterPromotion(from, to) {
     const chessColor = game.get(from).color; // "w" | "b"
     const squares = promoSquares(to, chessColor);
     promoPick = {from, to, squares};
 
-    const c = cgColor(chessColor);
+    const c = chessColor === "w" ? "white" : "black";
 
     ground.setPieces(new Map([
         [squares[0], {role: "queen", color: c}],
@@ -317,10 +338,12 @@ function enterPromotion(from, to) {
         highlight: {check: true, lastMove: true, custom: promoCustom},
     });
 
-    boardEl.querySelector(".cg-wrap")?.classList.add("promo-active");
+    const wrap = boardEl.querySelector(".cg-wrap");
+    if (wrap) {
+        wrap.classList.add("promo-active");
+    }
 }
 
-// Exit promotion mode and clear promo markers.
 function exitPromotion() {
     if (!promoPick) return;
 
@@ -330,867 +353,120 @@ function exitPromotion() {
     promoPick = null;
     promoCustom = new Map();
 
-    boardEl.querySelector(".cg-wrap")?.classList.remove("promo-active");
-}
-
-/* ---------- UI rendering ---------- */
-
-// Enable/disable buttons based on viewPly.
-function updateButtons() {
-    undoBtn.disabled = viewPly <= 0;
-    redoBtn.disabled = viewPly >= fullLine.length;
-}
-
-// Render PGN into the UI element (core.buildPgnHtml generates HTML).
-function renderPgn() {
-    pgnEl.innerHTML = buildPgnHtml(fullLine, viewPly);
-}
-
-/* Single source of truth for lastMove */
-function getLastMove() {
-    return computeLastMove(fullLine, viewPly);
-}
-
-// Sync: mirror `game` and app state into Chessground & UI; optional save via autoSavePgn().
-function sync({save = true} = {}) {
-    const turn = game.turn() === "w" ? "white" : "black";
-    const inCheck = game.inCheck?.() ?? false;
-    const checkColor = inCheck ? turn : false;
-
-    ground.set({
-        fen: game.fen(),
-        orientation,
-        turnColor: turn,
-        movable: {free: false, color: turn, dests: calcDests(game)},
-        check: checkColor,
-        highlight: {check: true, lastMove: true, custom: promoCustom},
-        lastMove: getLastMove() ?? undefined,
-    });
-
-    fenLine.value = game.fen();
-    fenLine.classList.remove("invalid");
-
-    renderPgn();
-    updateButtons();
-
-    if (save && viewPly === fullLine.length) autoSavePgn();
-}
-
-// Lightweight sync that updates UI and Chessground metadata without replacing the position/fen.
-function minimalSync({save = true} = {}) {
-    const turn = game.turn() === "w" ? "white" : "black";
-    const inCheck = game.inCheck?.() ?? false;
-    const checkColor = inCheck ? turn : false;
-
-    // Update Chessground metadata (turn, movable, highlights, lastMove) but don't set fen/pieces.
-    ground.set({
-        orientation,
-        turnColor: turn,
-        movable: {free: false, color: turn, dests: calcDests(game)},
-        check: checkColor,
-        highlight: {check: true, lastMove: true, custom: promoCustom},
-        lastMove: getLastMove() ?? undefined,
-    });
-
-    // Update UI inputs that are independent of ground's piece placement
-    fenLine.value = game.fen();
-    fenLine.classList.remove("invalid");
-
-    renderPgn();
-    updateButtons();
-
-    if (save && viewPly === fullLine.length) autoSavePgn();
-}
-
-/* --------------Overlay / Studies ------------------------- */
-
-
-function renderOverlayList() {
-    if (!studyListEl) return;
-
-    // newest first
-    const sorted = studies.slice().sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-
-    studyListEl.innerHTML = "";
-
-    for (const s of sorted) {
-        const item = document.createElement("div");
-        item.className = "study-item";
-
-        const meta = document.createElement("div");
-        meta.className = "study-meta";
-
-        if (renamingStudyId === s.id) {
-            // --- Rename mode ---
-            const input = document.createElement("input");
-            input.className = "study-rename input-box";
-            input.type = "text";
-            input.value = s.name;
-
-            // Focus after render
-            setTimeout(() => input.focus(), 0);
-
-            const commit = () => {
-                const name = input.value.trim();
-                renamingStudyId = null;
-
-                if (!name || name === s.name) {
-                    renderOverlayList();
-                    return;
-                }
-
-                const updated = {...s, name, updatedAt: Date.now()};
-                studies = upsertStudy(studies, updated);
-                saveStudiesToStorage();
-                renderOverlayList();
-            };
-
-            const cancel = () => {
-                renamingStudyId = null;
-                renderOverlayList();
-            };
-
-            input.addEventListener("keydown", (e) => {
-                if (e.key === "Enter") commit();
-                if (e.key === "Escape") cancel();
-            });
-
-            input.addEventListener("blur", commit);
-
-            meta.appendChild(input);
-        } else {
-            // --- Normal display mode ---
-            const name = document.createElement("div");
-            name.className = "study-name";
-            name.textContent = s.name;
-
-            const sub = document.createElement("div");
-            sub.className = "study-sub";
-            // Show study color and active marker in English
-            sub.textContent =
-                `${s.color === "black" ? "Black" : "White"}${s.id === activeStudyId ? " · active" : ""}`;
-
-            meta.appendChild(name);
-            meta.appendChild(sub);
-        }
-
-
-        const actions = document.createElement("div");
-        actions.style.display = "flex";
-        actions.style.gap = "8px";
-
-        const renameBtn = document.createElement("button");
-        renameBtn.className = "iconbtn";
-        renameBtn.type = "button";
-        renameBtn.title = "Rename";
-        renameBtn.textContent = "✎";
-        renameBtn.addEventListener("click", () => {
-            renamingStudyId = s.id;
-            renderOverlayList();
-            // Focus is set when the input appears (see above)
-        });
-        actions.appendChild(renameBtn);
-
-        const openBtn = document.createElement("button");
-        openBtn.className = "iconbtn";
-        openBtn.type = "button";
-        openBtn.title = "Open";
-        openBtn.textContent = "↩";
-        openBtn.addEventListener("click", () => {
-            selectStudy(s.id);
-            closeOverlay();
-        });
-
-        const delBtn = document.createElement("button");
-        delBtn.className = "iconbtn";
-        delBtn.type = "button";
-        delBtn.title = "Delete";
-        delBtn.textContent = "🗑";
-        delBtn.addEventListener("click", () => {
-            const ok = window.confirm(`Delete opening: "${s.name}"?`);
-            if (!ok) return;
-            deleteStudy(s.id);
-            renderOverlayList();
-        });
-
-        actions.appendChild(openBtn);
-        actions.appendChild(delBtn);
-
-        item.appendChild(meta);
-        item.appendChild(actions);
-        studyListEl.appendChild(item);
+    const wrap = boardEl.querySelector(".cg-wrap");
+    if (wrap) {
+        wrap.classList.remove("promo-active");
     }
 }
 
-function openOverlay() {
-    if (!overlayEl) return;
-    overlayEl.classList.remove("hidden");
-    overlayEl.setAttribute("aria-hidden", "false");
-    renderOverlayList();
+
+// Decide 4 squares used for picking promotion pieces.
+// This matches your "overlay pieces on squares" approach.
+function promoSquares(to, chessColor) {
+    // Place 4 choices on a file, ending at 'to'.
+    // For white promotion (to rank 8): show on ranks 8,7,6,5
+    // For black promotion (to rank 1): show on ranks 1,2,3,4
+    const file = to[0];
+    const ranks = chessColor === "w" ? ["8", "7", "6", "5"] : ["1", "2", "3", "4"];
+    return ranks.map(r => file + r);
 }
 
-function closeOverlay() {
-    if (!overlayEl) return;
-    overlayEl.classList.add("hidden");
-    overlayEl.setAttribute("aria-hidden", "true");
-}
 
-// Switch to the given study; save current study PGN before switching
-function selectStudy(id) {
-    // Save current study's PGN into its record before switching
-    const current = getActiveStudy();
-    if (current) {
-        studies = upsertStudy(studies, {...current, pgn: fullPgn, updatedAt: Date.now()});
+// -------------------- Dests helper --------------------
+function calcDests(g) {
+    const dests = new Map();
+    for (const m of g.moves({ verbose: true })) {
+        if (!dests.has(m.from)) dests.set(m.from, []);
+        dests.get(m.from).push(m.to);
     }
-
-    activeStudyId = id;
-    saveStudiesToStorage();
-
-    const next = getActiveStudy();
-    if (!next) return;
-
-    applyStudyDefaults(next);
-
-    // Load the study's PGN into the app state
-    game.reset();
-    if (next.pgn) {
-        try {
-            game.loadPgn(next.pgn);
-        } catch (e) {
-            console.warn("Study PGN invalid, resetting:", e);
-            game.reset();
-        }
-    }
-
-    commitFromGame();
-    goToPly(fullLine.length, {save: false});
+    return dests;
 }
 
-function deleteStudy(id) {
-    studies = studies.filter(s => s.id !== id);
-
-    if (activeStudyId === id) {
-        activeStudyId = studies[0]?.id ?? null;
-        saveStudiesToStorage();
-
-        if (activeStudyId) {
-            selectStudy(activeStudyId);
-        } else {
-            // No studies left: reset board
-            game.reset();
-            commitFromGame();
-            goToPly(0, {save: false});
-            openOverlay();
-        }
-        return;
-    }
-
-    saveStudiesToStorage();
+// -------------------- UI wiring --------------------
+function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = el.tagName?.toLowerCase();
+    return (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        el.isContentEditable
+    );
 }
 
-function openNewStudyForm() {
-    newStudyColor = "white";
-    pickWhiteBtn?.classList.add("active");
-    pickBlackBtn?.classList.remove("active");
-
-    newStudyForm?.classList.remove("hidden");
-    newStudyName.value = "";
-    newStudyName?.focus();
-}
-
-function closeNewStudyForm() {
-    newStudyForm?.classList.add("hidden");
-}
-
-pickWhiteBtn?.addEventListener("click", () => {
-    newStudyColor = "white";
-    pickWhiteBtn.classList.add("active");
-    pickBlackBtn.classList.remove("active");
-});
-
-pickBlackBtn?.addEventListener("click", () => {
-    newStudyColor = "black";
-    pickBlackBtn.classList.add("active");
-    pickWhiteBtn.classList.remove("active");
-});
-
-cancelNewStudyBtn?.addEventListener("click", closeNewStudyForm);
-
-newStudyBtn?.addEventListener("click", openNewStudyForm);
-
-newStudyForm?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = (newStudyName.value || "").trim();
-    if (!name) return;
-
-    const s = createStudy({name, color: newStudyColor});
-    studies = upsertStudy(studies, s);
-    activeStudyId = s.id;
-    saveStudiesToStorage();
-
-    // new study starts empty
-    game.reset();
-    commitFromGame();
-    goToPly(0, {save: false});
-
-    applyStudyDefaults(s);   // <- orientation, see above
-    closeNewStudyForm();
-    closeOverlay();
-});
-
-/* ---------- Timeline navigation ---------- */
-
-// Timeline navigation: set viewPly and re-render the board.
-function goToPly(ply, {save = false} = {}) {
-    viewPly = clampPly(ply, fullLine.length);
-    setGameToPly(viewPly);
-    sync({save});
-}
-
-function goPrevPly() {
-    // Block timeline navigation when in training mode
-    if (mode === "train") return;
-    goToPly(nextViewPly(viewPly, -1, fullLine.length));
-}
-
-function goNextPly() {
-    // Block timeline navigation when in training mode
-    if (mode === "train") return;
-    goToPly(nextViewPly(viewPly, +1, fullLine.length));
-}
-
-
-let autoplayTimer = null;
-
-function stopAutoplay() {
-    if (autoplayTimer) {
-        clearTimeout(autoplayTimer);
-        autoplayTimer = null;
-    }
-}
-
-function autoplayUntilUsersTurn({delayMs = 350} = {}) {
-    stopAutoplay();
-    if (mode !== "train") return;
-
-    const studyColor = getActiveStudy()?.color ?? "white";
-
-    const step = () => {
-        try {
-            if (mode !== "train") return;
-
-            // If it's user's turn, stop.
-            if (isUsersTurn(studyColor, viewPly)) return;
-
-            const exp = fullLine[viewPly];
-            if (!exp) return; // no more mainline
-
-            // Fallback: advance via goToPly (instant change handled by sync which may animate)
-            goToPly(viewPly + 1, {save: false});
-
-            const animMs = (typeof ground !== 'undefined' && ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
-            const wait = Math.max(delayMs, animMs + 60);
-            autoplayTimer = setTimeout(step, wait);
-        } catch (err) {
-            console.error('autoplayUntilUsersTurn step error:', err);
-            // Stop the autoplay so we don't spam errors continuously
-            stopAutoplay();
-        }
-    };
-
-    // initial wait uses same logic so the first visible step isn't rushed
-    const animMsInit = (typeof ground !== 'undefined' && ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
-    const initialWait = Math.max(delayMs, animMsInit + 60);
-    autoplayTimer = setTimeout(step, initialWait);
-}
-
-
-/* ---------- Master line commit from game ---------- */
-// Update fullLine/fullPgn from the `game` object and let core.applyCommit
-// compute viewPly/branching details.
-function commitFromGame() {
-    fullLine = game.history({verbose: true});
-    fullPgn = game.pgn();
-    const committed = applyCommit(fullLine);
-    viewPly = committed.viewPly;
-}
-
-/* ---------- FEN input ---------- */
-
-// Try to load a FEN string; validate and use sloppy fallback if needed.
-function applyFenFromInput() {
-    exitPromotion();
-
-    const fen = fenLine.value.trim().replace(/\s+/g, " ");
-    if (!fen) return;
-
-    let ok = false;
-
-    try {
-        game.load(fen);
-        ok = true;
-    } catch {
-    }
-
-    if (!ok) {
-        try {
-            game.load(fen, {sloppy: true});
-            ok = true;
-        } catch {
-        }
-    }
-
-    if (!ok) {
-        fenLine.classList.add("invalid");
-        console.warn("FEN invalid:", fen);
-        return;
-    }
-
-    fenLine.classList.remove("invalid");
-    commitFromGame();
-    goToPly(fullLine.length, {save: true});
-}
-
-const setGameToPlyTrain = (p) => {
-    const target = clampPly(p, fullLine.length);
-    const prev = viewPly;
-
-    if (target === prev) return;
-
-    const animMs = (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
-    const animMargin = 60;
-
-    // Case A: single-step advance (user move only)
-    if (target === prev + 1) {
-        // Update internal state to the user's ply
-        viewPly = target;
-        setGameToPly(viewPly);
-
-        // Let the UI catch up after the visible Chessground animation
-        setTimeout(() => {
-            minimalSync({save: false});
-        }, animMs + animMargin);
-
-        // Ensure opponent autoplay waits until user's animation + pause
-        pendingOpponentStartAt = Date.now() + animMs + OPPONENT_PAUSE_MS;
-        autoplayUntilUsersTurn({delayMs: 500});
-        return;
-    }
-
-    // Case B: two-step advance (user + opponent) where both moves are part of the mainline.
-    // We must update internal state immediately (tests expect this) but show only the user's position first and start the opponent animation after a pause.
-    if (target === prev + 2) {
-        // Compute opponent move descriptor
-        // const userMove = fullLine[prev]; // unused; we only need oppMove
-        const oppMove = fullLine[prev + 1];   // opponent's expected move
-
-        // For test determinism, update internal state to the final ply now
-        // but we will temporarily render the board as if only the user's move happened.
-        // 1) Compute FEN after user's move
-        setGameToPly(prev + 1);
-        const fenAfterUser = game.fen();
-
-        // 2) Now set the game to the final target (both moves applied)
-        setGameToPly(target);
-        viewPly = target;
-
-        // 3) Render the board as the user's position (so user sees their move), but keep
-        // the engine/game already at the final position internally.
-        try {
-            ground.set({fen: fenAfterUser, orientation, turnColor: game.turn() === 'w' ? 'white' : 'black'});
-        } catch (e) {
-            // best-effort; if ground.set fails, fallback to minimalSync which will at least update UI metadata
-            minimalSync({save: false});
-        }
-
-        // Schedule opponent animation after user's animation + pause
-        const startDelay = animMs + OPPONENT_PAUSE_MS;
-
-        setTimeout(() => {
-            // Animate opponent via Chessground; fallback to immediate sync on error
-            try {
-                if (!oppMove.promotion) ground.move(oppMove.from, oppMove.to);
-                else {
-                    // If promotion, we can't animate via ground.move reliably — just set game into position
-                }
-            } catch (e) {
-                // ignore
-            }
-
-            // After opponent animation finishes, mirror internal game to UI
-            setTimeout(() => {
-                minimalSync({save: false});
-            }, animMs + animMargin);
-        }, startDelay);
-
-        return;
-    }
-
-    // Fallback: arbitrary jump — behave like normal goToPly but do not trigger saves
-    viewPly = target;
-    setGameToPly(viewPly);
-    minimalSync({save: false});
-};
-
-function getAnimMs() {
-    return (ground?.state?.animation?.duration) ? ground.state.animation.duration : 200;
-}
-
-function applyMoveToGame(m) {
-    // Apply the move to chess.js synchronously so internal state (fullLine, viewPly)
-    // is updated for any immediate logic/tests.
-    let mv = null;
-    try {
-        mv = game.move(m);
-    } catch {
-        return null;
-    }
-    if (!mv) return null;
-
-    // Update master line state immediately
-    commitFromGame();
-
-    return mv;
-}
-
-function scheduleUserPostMoveSync() {
-    const animMs = getAnimMs();
-    const animMargin = 60;
-
-    setTimeout(() => {
-        minimalSync({save: true});
-    }, animMs + animMargin);
-}
-
-function markOpponentStartWindow() {
-    const animMs = getAnimMs();
-    pendingOpponentStartAt = Date.now() + animMs + OPPONENT_PAUSE_MS;
-    lastUserMoveAt = Date.now();
-    lastUserAnimMs = animMs;
-}
-
-function scheduleOpponentMoveAnimation(m, {userMoveHandled, userMoveKey}) {
-    const animMs = getAnimMs();
-    const animMargin = 60;
-    const opponentPause = OPPONENT_PAUSE_MS;
-
-    const key = `${m.from}-${m.to}`;
-    const now = Date.now();
-
-    const desiredFromUser = lastUserMoveAt ? (lastUserMoveAt + lastUserAnimMs + opponentPause) : 0;
-
-    let startDelay;
-    if (userMoveHandled && key !== userMoveKey && desiredFromUser > now) {
-        startDelay = desiredFromUser - now;
-    } else {
-        startDelay = (pendingOpponentStartAt && pendingOpponentStartAt > now)
-            ? (pendingOpponentStartAt - now)
-            : opponentPause;
-    }
-
-    pendingOpponentStartAt = 0;
-    lastUserMoveAt = 0;
-    lastUserAnimMs = 0;
-
-    setTimeout(() => {
-        try {
-            ground.move(m.from, m.to);
-        } catch {
-        }
-    }, startDelay);
-
-    setTimeout(() => {
-        minimalSync({save: true});
-    }, startDelay + animMs + animMargin);
-}
-
-function makeTrainingMakeMoveCb(userMoveObj) {
-    const userMoveKey = `${userMoveObj.from}-${userMoveObj.to}`;
-    let userMoveHandled = false;
-
-    return (m) => {
-        const mv = applyMoveToGame(m);
-        if (!mv) return null;
-
-        const key = `${m.from}-${m.to}`;
-
-        if (!userMoveHandled && key === userMoveKey) {
-            userMoveHandled = true;
-            scheduleUserPostMoveSync();
-            markOpponentStartWindow();
-        } else {
-            scheduleOpponentMoveAnimation(m, {userMoveHandled, userMoveKey});
-        }
-
-        return mv;
-    };
-}
-
-function resetTrainPosition() {
-    try {
-        setGameToPlyTrain(viewPly);
-    } catch {
-    }
-    try {
-        sync({save: false});
-    } catch {
-    }
-}
-
-function handleTrainMove(from, to) {
-    if (isPromotionMove(from, to)) {
-        enterPromotion(from, to);
-        return;
-    }
-
-    const studyColor = getActiveStudy()?.color ?? "white";
-
-    // Special case: user trains Black, but at the start White must move first.
-    // If a move event happens before it's the user's turn, just autoplay to user's turn and ignore this move.
-    if (studyColor === "black" && game.turn() === "w") {
-        try {
-            autoplayUntilUsersTurn({delayMs: 0});
-        } catch (e) {
-        }
-        return;
-    }
-
-    const moveObj = {from, to};
-
-    const ok = handleTrainingMove({
-        fullLine,
-        viewPly,
-        studyColor,
-        makeMove: makeTrainingMakeMoveCb(moveObj),
-        setGameToPly: setGameToPlyTrain,
-    }, moveObj);
-
-    if (!ok) resetTrainPosition();
-}
-
-function handleEditMove(from, to) {
-    // --- Edit mode only below here ---
-
-    // If in the past: cut future and replay truncated line before applying new move
-    const edited = applyEditInPast(fullLine, viewPly);
-    if (edited.line.length !== fullLine.length) {
-        fullLine = edited.line;
-        viewPly = edited.viewPly;
-        setGameToPly(viewPly);
-    }
-
-    if (isPromotionMove(from, to)) {
-        enterPromotion(from, to);
-        return;
-    }
-
-    const mv = game.move({from, to});
-    if (!mv) {
-        sync({save: false});
-        return;
-    }
-
-    commitFromGame();
-    sync({save: true});
-}
-
-function handlePromotionSelect() {
-    return (key) => {
-        if (!promoPick) return;
-
-        const idx = promoPick.squares.indexOf(key);
-        if (idx === -1) return;
-
-        const promoByIdx = ["q", "n", "r", "b"][idx];
-
-        const mv = game.move({
-            from: promoPick.from,
-            to: promoPick.to,
-            promotion: promoByIdx,
-        });
-
-        exitPromotion();
-
-        if (!mv) {
-            sync({save: false});
-            return;
-        }
-
-        commitFromGame();
-        sync({save: true});
-    };
-}
-
-/* =========================================================
-   Chessground init
-   ========================================================= */
-const ground = Chessground(boardEl, {
-    fen: game.fen(),
-    orientation,
-    coordinates: true,
-    highlight: {check: true, lastMove: true},
-    movable: {free: false, color: game.turn() === "w" ? "white" : "black", dests: calcDests(game)},
-    events: {
-        move: (from, to) => {
-            if (promoPick) return;
-
-            // Training mode: delegate first (NO edit-in-past logic)
-            if (mode === "train") {
-                handleTrainMove(from, to);
-                return;
-            }
-            handleEditMove(from, to);
-
-        },
-
-        select: handlePromotionSelect(),
-    },
-});
-
-requestAnimationFrame(ensurePromoDimmer);
-
-// Prevent fast "flying" artifacts on simple clicks: temporarily disable CSS transitions
-// on .cg-wrap when the user presses down, then re-enable shortly after.
-requestAnimationFrame(() => {
-    const wrap = boardEl.querySelector('.cg-wrap');
-    if (!wrap) return;
-    let clear = null;
-    wrap.addEventListener('pointerdown', () => {
-        wrap.classList.add('cg-no-trans');
-        if (clear) clearTimeout(clear);
-        clear = setTimeout(() => {
-            wrap.classList.remove('cg-no-trans');
-            clear = null;
-        }, 120);
-    });
-});
-
-/* =========================================================
-   Event listeners
-   ========================================================= */
-
-// Buttons
-undoBtn.addEventListener("click", goPrevPly);
-redoBtn.addEventListener("click", goNextPly);
-
-flipBtn.addEventListener("click", () => {
-    orientation = orientation === "white" ? "black" : "white";
-    localStorage.setItem(STORAGE_ORIENTATION_KEY, orientation);
-    sync({save: false});
-});
-
-lichessBtn.addEventListener("click", () => {
-    const url = lichessAnalysisUrl({
-        pgn: fullPgn,
-        fen: game.fen(),
-        orientation
-    });
-    window.open(url, "_blank", "noopener,noreferrer");
-});
-
-function stripPgnHeaders(pgn) {
-    if (!pgn) return "";
-    const parts = pgn.split(/\r?\n\r?\n/);
-    return parts.length > 1 ? parts.slice(1).join("\n\n").trim() : pgn.trim();
-}
-
-copyPgnBtn.addEventListener("click", async () => {
-    const rawPgn = fullPgn || game.pgn();
-    const pgn = stripPgnHeaders(rawPgn);
-
-    try {
-        await navigator.clipboard.writeText(pgn);
-        copyPgnBtn.textContent = "✓";
-        setTimeout(() => (copyPgnBtn.textContent = "Export PGN"), 800);
-    } catch {
-        window.prompt("Copy PGN (Ctrl+C):", pgn);
-    }
-});
-
-// PGN click -> jump
-pgnEl.addEventListener("click", (e) => {
-    if (mode === "train") return; // block PGN jumps in train mode
-    const mv = e.target.closest(".mv");
-    if (!mv) return;
-    const target = parseInt(mv.dataset.ply, 10);
-    const next = applyJump(viewPly, target, fullLine.length);
-    goToPly(next, {save: false});
-});
-
-// Keyboard arrows
-document.addEventListener("keydown", (e) => {
-    if (mode === "train") return; // block keyboard navigation in train mode
-    const tag = document.activeElement?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
+function onKeyDown(e) {
+    // nicht in Formularfeldern o.ä. abfangen
+    if (isTypingTarget(e.target)) return;
+
+    // optional: wenn dein Studies-Overlay offen ist, nicht eingreifen
+    // if (isStudiesOverlayOpen()) return;
 
     if (e.key === "ArrowLeft") {
         e.preventDefault();
-        goPrevPly();
-    }
-    if (e.key === "ArrowRight") {
+        undo();
+    } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        goNextPly();
+        redo();
     }
-});
+}
 
-// FEN
-fenLine.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-        e.preventDefault();
-        applyFenFromInput();
-        fenLine.blur();
+function wireUi() {
+    editBtn?.addEventListener("click", () => setMode("edit"));
+    trainBtn?.addEventListener("click", () => setMode("train"));
+
+    undoBtn?.addEventListener("click", undo);
+    redoBtn?.addEventListener("click", redo);
+
+    flipBtn?.addEventListener("click", flipBoard);
+    lichessBtn?.addEventListener("click", openLichessAnalysis);
+
+    window.addEventListener("keydown", onKeyDown);
+}
+
+/* Tree logger (for debugging) --------------------------------------------*/
+function moveToUci(m) {
+    return `${m.from}${m.to}${m.promotion || ""}`;
+}
+function lineToText(line) {
+    let out = [];
+    for (let i = 0; i < line.length; i += 2) {
+        const no = i / 2 + 1;
+        const w = moveToUci(line[i]);
+        const b = line[i + 1] ? moveToUci(line[i + 1]) : null;
+        out.push(`${no}. ${w}${b ? " " + b : ""}`);
     }
-});
-fenLine.addEventListener("blur", applyFenFromInput);
+    return out.join(" ");
+}
+function getAllLinesFromRoot(root) {
+    const lines = [];
+    const current = [];
 
-btnImportPgn?.addEventListener("click", () => {
-    exitPromotion?.(); // falls du exitPromotion hast; sonst weglassen
-    const ok = applyPgnFromInput(pgnInput.value);
-    pgnInput.classList.toggle("invalid", !ok);
-});
+    function dfs(node) {
+        if (node.move) current.push(node.move);
 
-studiesBtn?.addEventListener("click", openOverlay);
-closeOverlayBtn?.addEventListener("click", closeOverlay);
-
-
-// Click on backdrop closes too
-overlayEl?.addEventListener("click", (e) => {
-    if (e.target === overlayEl) closeOverlay();
-});
-
-
-/* =========================================================
-   Boot: load saved PGN and start at end
-   ========================================================= */
-(function boot() {
-    // 1) Load studies + active id
-    studies = loadStudiesFromStorage();
-    activeStudyId = localStorage.getItem(STORAGE_ACTIVE_STUDY_KEY);
-
-    // 2) Legacy migration (old single-PGN key) if no studies exist
-    const legacyPgn = localStorage.getItem(STORAGE_PGN_KEY);
-    const migrated = migrateLegacyPgn({legacyPgn, existingStudies: studies});
-
-    studies = migrated.studies;
-    if (!activeStudyId) activeStudyId = migrated.activeStudyId;
-
-    saveStudiesToStorage();
-
-    // 3) If we have a study, load it. Otherwise start empty + open overlay.
-    const s = getActiveStudy();
-    if (s?.pgn) {
-        try {
-            game.loadPgn(s.pgn);
-        } catch (e) {
-            console.warn("Failed to load active study PGN:", e);
-            game.reset();
+        if (!node.children || node.children.length === 0) {
+            lines.push(current.slice());
+        } else {
+            for (const ch of node.children) dfs(ch);
         }
-    } else {
-        game.reset();
+
+        if (node.move) current.pop();
     }
 
-    commitFromGame();
-    goToPly(fullLine.length, {save: false});
+    dfs(root);
+    return lines;
+}
 
-    if (!getActiveStudy()) openOverlay();
-})();
+function logTree() {
+    const lines = getAllLinesFromRoot(treeSession.root);
+    console.group(`TREE (${lines.length} line(s))`);
+    lines.forEach((line, i) => {
+        console.log(`${i + 1}: ${lineToText(line)}`);
+    });
+
+    const pathMoves = getSessionMoves(treeSession);
+    console.log("PATH:", pathMoves.length ? lineToText(pathMoves) : "(root)");
+    console.groupEnd();
+}
+
+

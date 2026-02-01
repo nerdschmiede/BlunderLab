@@ -15,19 +15,17 @@
 <body>
 <main class="page">
     <h1 class="title">BlunderLab</h1>
+    <div class="board-stack">
+        <div id="pgn-line" aria-label="Move list"></div>
 
-    <div id="board" class="board" aria-label="Chess board"></div>
-
+        <div id="board" class="board" aria-label="Chess board"></div>
+    </div>
     <!-- Mode toggle row: dedicated full-width row directly under the board -->
     <div class="mode-row">
         <div class="segmented-toggle" role="group" aria-label="Mode">
             <button id="editBtn" type="button" class="iconbtn" aria-pressed="true">Edit</button>
             <button id="trainBtn" type="button" class="iconbtn" aria-pressed="false">Train</button>
         </div>
-    </div>
-
-    <div class="pgnline" id="pgnLine">
-        <div id="pgn"></div>
     </div>
 
     <div class="controls" aria-label="Move controls">
@@ -37,56 +35,6 @@
         <button id="lichessBtn" class="iconbtn" type="button" aria-label="Lichess analysis">🔍︎</button>
         <button id="studiesBtn" class="iconbtn" type="button" aria-label="Studies" title="Studies">☰</button>
     </div>
-
-        <input
-                id="fenLine"
-                type="text"
-                class="input-box"
-                spellcheck="false"
-                autocomplete="off"
-                placeholder="FEN"
-                aria-label="FEN"
-        />
-
-  <input
-          id="pgnInput"
-          class="input-box"
-          placeholder="Paste PGN …"
-   />
-    <div id="importexport">
-        <button id="btnImportPgn" type="button" class="icon-btn text-btn">Import PGN</button>
-        <button id="copyPgnBtn"  type="button" class="icon-btn text-btn">Export PGN</button>
-    </div>
-    <div id="overlay" class="overlay hidden" aria-hidden="true">
-        <div class="sheet" role="dialog" aria-modal="true" aria-label="Openings">
-            <div class="sheet-header">
-                <div class="sheet-title">Openings</div>
-                <button id="closeOverlayBtn" class="iconbtn" type="button" aria-label="Close">✕</button>
-            </div>
-
-            <div class="sheet-actions">
-                <button id="newStudyBtn" class="iconbtn" type="button" aria-label="New Opening" title="New Opening">＋</button>
-            </div>
-
-            <div id="studyList" class="study-list"></div>
-            <form id="newStudyForm" class="new-study hidden">
-                <input id="newStudyName" class="input-box" type="text" placeholder="Opening name" />
-
-                <div class="segmented" role="group" aria-label="Color">
-                    <button type="button" id="pickWhite" class="seg-btn active">White</button>
-                    <button type="button" id="pickBlack" class="seg-btn">Black</button>
-                </div>
-
-                <div class="row">
-                    <button type="button" id="cancelNewStudy" class="btn">Cancel</button>
-                    <button type="submit" class="btn primary">Create</button>
-
-                </div>
-            </form>
-
-        </div>
-    </div>
-
 </main>
 
 

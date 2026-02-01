@@ -36,105 +36,105 @@ it("builds a single-branch tree from a line", () => {
     expect(root.children[0].children[0].children[0].move).toEqual(line[2]);
 });
 
-import { findChildByMove } from "./tree.js";
+import {
+    createTreeSession,
+    currentNode,
+    goBack,
+    goForwardIfExists,
+    addVariationAndGo,
+    deleteCurrentAndGoParent,
+} from "./tree.js";
 
-it("finds matching child by move", () => {
-    const root = buildTreeFromLine([
-        { from: "e2", to: "e4" },
-        { from: "e7", to: "e5" },
-    ]);
+describe("tree session API", () => {
+    it("createTreeSession starts at root", () => {
+        const root = createRoot();
+        const session = createTreeSession(root);
 
-    const child = findChildByMove(root, { from: "e2", to: "e4" });
-    expect(child).not.toBe(null);
-
-    const wrong = findChildByMove(root, { from: "d2", to: "d4" });
-    expect(wrong).toBe(null);
-});
-
-import { addVariation } from "./tree.js";
-
-it("adds a new variation as child", () => {
-    const root = createRoot();
-
-    const move = { from: "d2", to: "d4" };
-    const child = addVariation(root, move);
-
-    expect(root.children).toHaveLength(1);
-    expect(child.move).toEqual(move);
-});
-
-
-import { Chess } from "chess.js";
-import { positionKeyFromFen, positionKeyFromGame } from "./tree.js";
-
-describe("positionKeyFromFen", () => {
-    it("drops halfmove/fullmove counters", () => {
-        const a = "8/8/8/8/8/8/8/8 w - - 0 1";
-        const b = "8/8/8/8/8/8/8/8 w - - 12 37";
-
-        expect(positionKeyFromFen(a)).toBe("8/8/8/8/8/8/8/8 w - -");
-        expect(positionKeyFromFen(b)).toBe("8/8/8/8/8/8/8/8 w - -");
-        expect(positionKeyFromFen(a)).toBe(positionKeyFromFen(b));
+        expect(session.root).toBe(root);
+        expect(session.path).toEqual([root]);
+        expect(currentNode(session)).toBe(root);
     });
 
-    it("keeps side to move (important!)", () => {
-        const w = "8/8/8/8/8/8/8/8 w - - 0 1";
-        const b = "8/8/8/8/8/8/8/8 b - - 0 1";
+    it("addVariationAndGo creates a child and advances path", () => {
+        const session = createTreeSession();
 
-        expect(positionKeyFromFen(w)).not.toBe(positionKeyFromFen(b));
+        const res = addVariationAndGo(session, { from: "e2", to: "e4" });
+
+        expect(res.ok).toBe(true);
+        expect(res.created).toBe(true);
+        expect(session.root.children).toHaveLength(1);
+        expect(currentNode(session).move).toEqual({ from: "e2", to: "e4" });
+        expect(session.path).toHaveLength(2);
     });
 
-    it("keeps castling rights", () => {
-        const a = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
-        const b = "r3k2r/8/8/8/8/8/8/R3K2R w - - 0 1";
+    it("addVariationAndGo does not duplicate an existing child", () => {
+        const session = createTreeSession();
 
-        expect(positionKeyFromFen(a)).not.toBe(positionKeyFromFen(b));
+        addVariationAndGo(session, { from: "e2", to: "e4" });
+        goBack(session); // back to root
+
+        const res2 = addVariationAndGo(session, { from: "e2", to: "e4" });
+
+        expect(res2.ok).toBe(true);
+        expect(res2.created).toBe(false);
+        expect(session.root.children).toHaveLength(1);
+        expect(session.path).toHaveLength(2);
     });
 
-    it("keeps en passant square", () => {
-        const a = "8/8/8/3pP3/8/8/8/8 w - d6 0 1";
-        const b = "8/8/8/3pP3/8/8/8/8 w - - 0 1";
+    it("goForwardIfExists follows an existing child, otherwise fails", () => {
+        const root = createRoot();
+        const e4 = createNode({ from: "e2", to: "e4" });
+        root.children.push(e4);
 
-        expect(positionKeyFromFen(a)).not.toBe(positionKeyFromFen(b));
-    });
-});
+        const session = createTreeSession(root);
 
-describe("positionKeyFromGame", () => {
-    it("works with chess.js", () => {
-        const game = new Chess();
-        const key1 = positionKeyFromGame(game);
+        const ok = goForwardIfExists(session, { from: "e2", to: "e4" });
+        expect(ok.ok).toBe(true);
+        expect(currentNode(session)).toBe(e4);
 
-        game.move("e4");
-        const key2 = positionKeyFromGame(game);
-
-        expect(key1).not.toBe(key2);
-    });
-});
-
-
-import { createPositionIndex, indexNode } from "./tree.js";
-
-describe("position index", () => {
-    it("createPositionIndex returns an empty Map", () => {
-        const index = createPositionIndex();
-
-        expect(index).toBeInstanceOf(Map);
-        expect(index.size).toBe(0);
+        goBack(session);
+        const bad = goForwardIfExists(session, { from: "d2", to: "d4" });
+        expect(bad.ok).toBe(false);
+        expect(bad.reason).toBe("no-such-child");
     });
 
-    it("indexNode groups nodes by positionKey", () => {
-        const index = createPositionIndex();
+    it("goBack pops one node, but refuses at root", () => {
+        const session = createTreeSession();
+        addVariationAndGo(session, { from: "e2", to: "e4" });
 
-        const n1 = createNode({ from: "e2", to: "e4" });
-        const n2 = createNode({ from: "d2", to: "d4" });
-        const n3 = createNode({ from: "g1", to: "f3" });
+        const res1 = goBack(session);
+        expect(res1.ok).toBe(true);
+        expect(session.path).toHaveLength(1);
 
-        indexNode(index, "posA", n1);
-        indexNode(index, "posA", n2);
-        indexNode(index, "posB", n3);
+        const res2 = goBack(session);
+        expect(res2.ok).toBe(false);
+        expect(res2.reason).toBe("at-root");
+    });
 
-        expect(index.get("posA")).toEqual([n1, n2]);
-        expect(index.get("posB")).toEqual([n3]);
-        expect(index.size).toBe(2);
+    it("deleteCurrentAndGoParent deletes a leaf and moves to parent", () => {
+        const session = createTreeSession();
+        addVariationAndGo(session, { from: "e2", to: "e4" });
+
+        expect(session.root.children).toHaveLength(1);
+        expect(session.path).toHaveLength(2);
+
+        const res = deleteCurrentAndGoParent(session);
+        expect(res.ok).toBe(true);
+
+        expect(session.root.children).toHaveLength(0);
+        expect(session.path).toHaveLength(1);
+    });
+
+    it("deleteCurrentAndGoParent refuses if current has children", () => {
+        const session = createTreeSession();
+        addVariationAndGo(session, { from: "e2", to: "e4" });
+        addVariationAndGo(session, { from: "e7", to: "e5" });
+
+        // now current is e5; go back to e4 and try delete e4 (has child e5)
+        goBack(session); // back to e4
+
+        const res = deleteCurrentAndGoParent(session);
+        expect(res.ok).toBe(false);
+        expect(res.reason).toBe("has-children");
     });
 });
