@@ -6,7 +6,8 @@ import {
     createRoot,
     addVariationAndGo,
     goBack,
-    goForwardIfExists, currentNode,
+    goForwardIfExists,
+    currentNode,
 } from "./src/tree.js";
 
 // -------------------- DOM --------------------
@@ -69,42 +70,44 @@ function initGround() {
 
 // -------------------- Move handling --------------------
 function onUserMove(from, to) {
-    if (promoPick) return;
+    if (isPromotionOverlayActive()) return;
 
-    // Promotion: enter picker instead of making the move
     if (isPromotionMove(from, to)) {
-        enterPromotion(from, to);
-        console.log("Promotion move, entering picker.");
+        startPromotionFlow(from, to);
         return;
     }
 
-    const mv = tryGameMove({from, to});
-    if (!mv) {
-        console.log("Illegal move:", from, to);
-        // illegal => restore visuals
+    // Zug im Game testen
+    const legalMove = tryGameMove({ from, to });
+    if (!legalMove) {
         syncBoardOnly();
-
         return;
     }
 
-    // Edit: persist to tree (follow existing or create new variation)
-    if (mode === "edit") {
-        addVariationAndGo(treeSession, {
-            from: mv.from,
-            to: mv.to,
-            promotion: mv.promotion,
-        });
-
-        // once we make a new move, redo history is invalid
-        redoStack = [];
-    } else {
-        console.warn("Train mode: Nothings happens yet on move.");
-    }
-
+    addMoveToTree(legalMove);
+    clearRedoHistory();
     syncUi();
+}
+/* ---------------- User Move helpers ---------------- */
+
+function isPromotionOverlayActive() {
+    return promoPick === true;
+}
+
+function addMoveToTree(mv) {
+    addVariationAndGo(treeSession, {
+        from: mv.from,
+        to: mv.to,
+        promotion: mv.promotion,
+    });
+}
+
+function clearRedoHistory() {
+    redoStack = [];
 }
 
 function onBoardSelect(key) {
+    console.log("select", key);
     if (!promoPick) return;
 
     const idx = promoPick.squares.indexOf(key);
@@ -154,6 +157,7 @@ function movesToInlineText(moves) {
     return out.join(" ");
 }
 
+
 // -------------------- Navigation: Undo/Redo via Tree path --------------------
 function undo() {
     if (promoPick) return;
@@ -187,6 +191,7 @@ function redo() {
 
 // -------------------- Replay (Tree -> Game/UI) --------------------
 function replaySessionToGame() {
+    console.log("replay");
     game = new Chess();
     for (const mv of getSessionMoves(treeSession)) {
         const res = tryGameMove(mv);   // reuse!
@@ -233,6 +238,8 @@ function syncPgnLine() {
     scrollPgnLineToEnd();
 }
 
+const movableEvents = { after: onUserMove };
+
 function syncBoardOnly() {
     const turnColor = game.turn() === "w" ? "white" : "black";
 
@@ -243,6 +250,7 @@ function syncBoardOnly() {
             free: false,
             color: mode === "edit" ? "both" : turnColor,
             dests: calcDests(game),
+            events: movableEvents,
         },
         highlight: {check: true, lastMove: true, custom: promoCustom},
     });
@@ -260,11 +268,17 @@ function updateUndoRedoState() {
 // -------------------- Mode toggle --------------------
 function setMode(nextMode) {
     if (mode === nextMode) return;
-    mode = nextMode;
-    renderModeButtons();
 
-    // Train is stub for now; later we’ll add logic here.
+    mode = nextMode;
+
+    if (mode === "train") {
+        console.warn("Train mode not implemented yet.");
+    } else {
+        // edit: nur UI auffrischen
+        syncUi();
+    }
 }
+
 
 function renderModeButtons() {
     if (!editBtn || !trainBtn) return;
@@ -317,7 +331,7 @@ function isPromotionMove(from, to) {
     return (piece.color === "w" && rank === "8") || (piece.color === "b" && rank === "1");
 }
 
-function enterPromotion(from, to) {
+function startPromotionFlow(from, to) {
     const chessColor = game.get(from).color; // "w" | "b"
     const squares = promoSquares(to, chessColor);
     promoPick = {from, to, squares};

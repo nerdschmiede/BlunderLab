@@ -508,3 +508,13 @@ cg-board {
     .segment-toggle .iconbtn, .segmented-toggle .iconbtn { min-width: 84px; }
 }
 
+/* wrong training move */
+@keyframes bl-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+}
+
+.board.shake {
+    animation: bl-shake 140ms ease-in-out 0s 2;
+}
