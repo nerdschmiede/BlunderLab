@@ -1,6 +1,6 @@
 // src/studyTree/tree.test.js
 import { describe, it, expect } from "vitest";
-import { createRoot, createNode } from "./tree.js";
+import {createRoot, createNode, isExpectedMove} from "./tree.js";
 
 describe("study tree basics", () => {
     it("creates an empty root", () => {
@@ -138,3 +138,50 @@ describe("tree session API", () => {
         expect(res.reason).toBe("has-children");
     });
 });
+
+describe("isExpectedMove", () => {
+    it("returns true if move exists as child of current node", () => {
+        const root = createRoot();
+        const session = createTreeSession(root);
+
+        root.children.push(createNode({ from: "e2", to: "e4" }));
+
+        expect(isExpectedMove(session, { from: "e2", to: "e4" })).toBe(true);
+    });
+
+    it("returns false if move does not exist", () => {
+        const root = createRoot();
+        const session = createTreeSession(root);
+
+        root.children.push(createNode({ from: "d2", to: "d4" }));
+
+        expect(isExpectedMove(session, { from: "e2", to: "e4" })).toBe(false);
+    });
+
+    it("returns false if current node has no children", () => {
+        const root = createRoot();
+        const session = createTreeSession(root);
+
+        expect(isExpectedMove(session, { from: "e2", to: "e4" })).toBe(false);
+    });
+
+    it("checks moves relative to the current session node", () => {
+        const root = createRoot();
+        const e4 = createNode({ from: "e2", to: "e4" });
+        const c5 = createNode({ from: "c7", to: "c5" });
+
+        root.children.push(e4);
+        e4.children.push(c5);
+
+        const session = createTreeSession(root);
+
+        // Am Root: e4 ist erlaubt
+        expect(isExpectedMove(session, { from: "e2", to: "e4" })).toBe(true);
+
+        // Nach e4: c5 ist erlaubt
+        goForwardIfExists(session, { from: "e2", to: "e4" });
+        expect(isExpectedMove(session, { from: "c7", to: "c5" })).toBe(true);
+    });
+
+
+})

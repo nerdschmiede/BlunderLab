@@ -8,6 +8,8 @@ import {
     goBack,
     goForwardIfExists,
     currentNode,
+    isExpectedMove,
+    resetSessionToRoot
 } from "./src/tree.js";
 
 // -------------------- DOM --------------------
@@ -40,6 +42,8 @@ let redoStack = [];
 let promoPick = null;      // { from, to, squares: [..] }
 let promoCustom = new Map();
 
+const boardUserMoveEvents = { after: onUserMove };
+
 // -------------------- Init --------------------
 initGround();
 wireUi();
@@ -57,9 +61,9 @@ function initGround() {
             free: false,
             color: "white",
             dests: calcDests(game),
+            events: boardUserMoveEvents,
         },
         events: {
-            move: onUserMove,
             select: onBoardSelect,
         },
     });
@@ -77,8 +81,24 @@ function onUserMove(from, to) {
         return;
     }
 
+    const moveKey = { from, to };
+
+    if (mode === "train") {
+        applyTrainingMove(moveKey);
+        return;
+    }
+
+    applyEditMove(moveKey);
+}
+/* ---------------- User Move helpers ---------------- */
+
+function isPromotionOverlayActive() {
+    return promoPick === true;
+}
+
+function applyEditMove(mv) {
     // Zug im Game testen
-    const legalMove = tryGameMove({ from, to });
+    const legalMove = tryGameMove(mv);
     if (!legalMove) {
         syncBoardOnly();
         return;
@@ -87,11 +107,6 @@ function onUserMove(from, to) {
     addMoveToTree(legalMove);
     clearRedoHistory();
     syncUi();
-}
-/* ---------------- User Move helpers ---------------- */
-
-function isPromotionOverlayActive() {
-    return promoPick === true;
 }
 
 function addMoveToTree(mv) {
@@ -106,8 +121,36 @@ function clearRedoHistory() {
     redoStack = [];
 }
 
+function applyTrainingMove(moveKey) {
+    const ok = isExpectedMove(treeSession, moveKey);
+    if (ok) goForwardIfExists(treeSession, moveKey);
+    else flashWrong();
+
+    resetPositionFromSession();
+}
+
+/* ---------------- training helpers ---------------- */
+function startTraining() {
+    resetSessionToRoot(treeSession);
+    resetPositionFromSession();
+}
+
+function flashWrong() {
+    const el = document.getElementById("board");
+    if (!el) return;
+
+    el.classList.add("shake");
+    setTimeout(() => el.classList.remove("shake"), 300);
+}
+
+function resetPositionFromSession() {
+    replaySessionToGame();
+    syncUi();
+}
+
+/* -------------------- Board select handling (for promotion) -------------------- */
+
 function onBoardSelect(key) {
-    console.log("select", key);
     if (!promoPick) return;
 
     const idx = promoPick.squares.indexOf(key);
@@ -146,16 +189,7 @@ function tryGameMove(moveObj) {
     }
 }
 
-function movesToInlineText(moves) {
-    let out = [];
-    for (let i = 0; i < moves.length; i += 2) {
-        const no = i / 2 + 1;
-        const w = moves[i];
-        const b = moves[i + 1];
-        out.push(`${no}. ${w}${b ? " " + b : ""}`);
-    }
-    return out.join(" ");
-}
+
 
 
 // -------------------- Navigation: Undo/Redo via Tree path --------------------
@@ -191,17 +225,15 @@ function redo() {
 
 // -------------------- Replay (Tree -> Game/UI) --------------------
 function replaySessionToGame() {
-    console.log("replay");
     game = new Chess();
     for (const mv of getSessionMoves(treeSession)) {
-        const res = tryGameMove(mv);   // reuse!
-        if (!res) {
+        const ok = game.move(mv);
+        if (!ok) {
             console.warn("Illegal move in tree:", mv);
             break;
         }
     }
 }
-
 
 function getSessionMoves(session) {
     // derives current mainline from session.path
@@ -238,19 +270,27 @@ function syncPgnLine() {
     scrollPgnLineToEnd();
 }
 
-const movableEvents = { after: onUserMove };
+function movesToInlineText(moves) {
+    let out = [];
+    for (let i = 0; i < moves.length; i += 2) {
+        const no = i / 2 + 1;
+        const w = moves[i];
+        const b = moves[i + 1];
+        out.push(`${no}. ${w}${b ? " " + b : ""}`);
+    }
+    return out.join(" ");
+}
+
 
 function syncBoardOnly() {
-    const turnColor = game.turn() === "w" ? "white" : "black";
-
-    ground.set({
+      ground.set({
         fen: game.fen(),
         orientation,
         movable: {
             free: false,
-            color: mode === "edit" ? "both" : turnColor,
+            color: "both",
             dests: calcDests(game),
-            events: movableEvents,
+            events: boardUserMoveEvents,
         },
         highlight: {check: true, lastMove: true, custom: promoCustom},
     });
@@ -272,12 +312,14 @@ function setMode(nextMode) {
     mode = nextMode;
 
     if (mode === "train") {
-        console.warn("Train mode not implemented yet.");
-    } else {
-        // edit: nur UI auffrischen
-        syncUi();
+        startTraining();
+        return;
     }
+
+    // edit mode
+    syncUi();
 }
+
 
 
 function renderModeButtons() {

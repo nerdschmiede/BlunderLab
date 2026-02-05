@@ -65,6 +65,16 @@ export function goForwardIfExists(session, moveObj) {
     return { ok: true, node: next };
 }
 
+export function isExpectedMove(session, moveObj) {
+    const cur = currentNode(session);
+    return cur.children.some((c) => c.move && sameMove(c.move, moveObj));
+}
+
+export function resetSessionToRoot(session) {
+    session.path = [session.root];
+}
+
+
 // --- Edit (tree changes) ----------------------------------------
 
 export function addVariationAndGo(session, moveObj) {
