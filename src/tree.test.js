@@ -1,6 +1,6 @@
 // src/studyTree/tree.test.js
 import { describe, it, expect } from "vitest";
-import {createRoot, createNode, isExpectedMove} from "./tree.js";
+import {createRoot, createNode, isExpectedMove, deserializeTree} from "./tree.js";
 
 describe("study tree basics", () => {
     it("creates an empty root", () => {
@@ -185,3 +185,150 @@ describe("isExpectedMove", () => {
 
 
 })
+
+// save
+
+import {
+    createOpening,
+    createEmptyAppState,
+    serializeAppState,
+    deserializeAppState,
+    saveToStorage,
+    loadFromStorage,
+} from "./tree.js";
+
+function makeMemoryStorage() {
+    const m = new Map();
+    return {
+        getItem: (k) => (m.has(k) ? m.get(k) : null),
+        setItem: (k, v) => m.set(k, String(v)),
+        removeItem: (k) => m.delete(k),
+        _dump: () => Object.fromEntries(m.entries()),
+    };
+}
+
+describe("app state serialization", () => {
+    it("roundtrips app state with full tree", () => {
+        const o = createOpening({ name: "Caro-Kann", trainAs: "black" });
+        o.root = buildTreeFromLine([
+            { from: "e2", to: "e4" },
+            { from: "c7", to: "c6" },
+            { from: "d2", to: "d4" },
+            { from: "d7", to: "d5" },
+        ]);
+
+        const state = createEmptyAppState();
+        state.openings.push(o);
+        state.activeOpeningId = o.id;
+
+        const json = serializeAppState(state);
+        const parsed = deserializeAppState(json);
+
+        expect(parsed.openings).toHaveLength(1);
+        expect(parsed.activeOpeningId).toBe(o.id);
+        expect(parsed.openings[0].name).toBe("Caro-Kann");
+        expect(parsed.openings[0].trainAs).toBe("black");
+
+        // Tree content exists (full subtree)
+        const root = parsed.openings[0].root;
+        expect(root.children.length).toBeGreaterThan(0);
+        expect(root.children[0].move).toEqual({ from: "e2", to: "e4" });
+        expect(root.children[0].children[0].move).toEqual({ from: "c7", to: "c6" });
+    });
+
+    it("saveToStorage/loadFromStorage works", () => {
+        const storage = makeMemoryStorage();
+
+        const o = createOpening({ name: "Italian", trainAs: "white" });
+        const state = createEmptyAppState();
+        state.openings.push(o);
+        state.activeOpeningId = o.id;
+
+        saveToStorage(state, storage, "testkey");
+        const loaded = loadFromStorage(storage, "testkey");
+
+        expect(loaded.activeOpeningId).toBe(o.id);
+        expect(loaded.openings[0].name).toBe("Italian");
+        expect(loaded.openings[0].trainAs).toBe("white");
+    });
+
+    it("if activeOpeningId is missing, it becomes null", () => {
+        const o = createOpening({ name: "Sicilian", trainAs: "black" });
+        const state = createEmptyAppState();
+        state.openings.push(o);
+        state.activeOpeningId = "does-not-exist";
+
+        const json = serializeAppState(state);
+        const loaded = deserializeAppState(json);
+
+        expect(loaded.activeOpeningId).toBe(null);
+    });
+});
+
+
+describe("new persistence helpers", () => {
+    it("deserializeTree normalizes missing children recursively", () => {
+        const raw = {
+            move: null,
+            children: [
+                { move: { from: "e2", to: "e4" } }, // children missing
+            ],
+        };
+
+        const root = deserializeTree(raw);
+
+        expect(Array.isArray(root.children)).toBe(true);
+        expect(Array.isArray(root.children[0].children)).toBe(true);
+        expect(root.children[0].children).toEqual([]);
+    });
+
+    it("deserializeAppState throws on unsupported schemaVersion", () => {
+        const bad = JSON.stringify({
+            schemaVersion: 999,
+            openings: [],
+            activeOpeningId: null,
+        });
+
+        expect(() => deserializeAppState(bad)).toThrow(/schemaVersion/i);
+    });
+
+    it("deserializeAppState throws on invalid JSON", () => {
+        expect(() => deserializeAppState("{not valid json")).toThrow();
+    });
+
+    it("loadFromStorage returns empty state if nothing stored", () => {
+        const storage = makeMemoryStorage();
+        const state = loadFromStorage(storage, "missing-key");
+
+        expect(state).toEqual(createEmptyAppState());
+    });
+
+    it("deserializeAppState clears activeOpeningId if not found", () => {
+        const o = createOpening({ name: "Test", trainAs: "white" });
+        const state = createEmptyAppState();
+        state.openings.push(o);
+        state.activeOpeningId = "does-not-exist";
+
+        const json = serializeAppState(state);
+        const loaded = deserializeAppState(json);
+
+        expect(loaded.activeOpeningId).toBe(null);
+    });
+
+    it("saveToStorage/loadFromStorage roundtrip keeps opening fields", () => {
+        const storage = makeMemoryStorage();
+
+        const o = createOpening({ name: "Caro-Kann", trainAs: "black" });
+        const state = createEmptyAppState();
+        state.openings.push(o);
+        state.activeOpeningId = o.id;
+
+        saveToStorage(state, storage, "k");
+        const loaded = loadFromStorage(storage, "k");
+
+        expect(loaded.openings[0].id).toBe(o.id);
+        expect(loaded.openings[0].name).toBe("Caro-Kann");
+        expect(loaded.openings[0].trainAs).toBe("black");
+        expect(loaded.activeOpeningId).toBe(o.id);
+    });
+});

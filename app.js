@@ -524,5 +524,3 @@ function logTree() {
     console.log("PATH:", pathMoves.length ? lineToText(pathMoves) : "(root)");
     console.groupEnd();
 }
-
-
