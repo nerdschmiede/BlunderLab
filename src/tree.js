@@ -189,6 +189,7 @@ export function serializeAppState(state) {
             id: o.id,
             name: o.name,
             trainAs: o.trainAs,
+            lastPath: o.lastPath ?? [],
             root: serializeTree(o.root),
         })),
         activeOpeningId: state.activeOpeningId ?? null,
@@ -215,6 +216,7 @@ export function deserializeAppState(json) {
             id: String(o.id),
             name: String(o.name),
             trainAs: o.trainAs === "white" ? "white" : "black",
+            lastPath: Array.isArray(o.lastPath) ? o.lastPath : [],
             root: deserializeTree(o.root),
         };
     });

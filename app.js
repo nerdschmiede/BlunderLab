@@ -512,23 +512,53 @@ function closeOverlay() {
 
 
 function persistAppState() {
+    updateLastPathFromSession();
     saveToStorage(appState, localStorage, DEFAULT_STORAGE_KEY);
 }
 
+function updateLastPathFromSession() {
+    const opening = appState.openings.find((o) => o.id === appState.activeOpeningId) || null;
+    if (!opening) return;
+
+    const path = [];
+    for (const node of treeSession.path) {
+        const m = node?.move;
+        if (!m) continue; // root / null moves
+        path.push({
+            from: m.from,
+            to: m.to,
+            ...(m.promotion ? { promotion: m.promotion } : {}),
+        });
+    }
+
+    opening.lastPath = path;
+}
+
 function selectOpening(id) {
-    const o = appState.openings.find(x => x.id === id);
-    if (!o) return;
+    const opening = appState.openings.find(x => x.id === id);
+    if (!opening) return;
 
     appState.activeOpeningId = id;
-    persistAppState();
 
-    orientation = orientationForTrainAs(o.trainAs);
+    orientation = orientationForTrainAs(opening.trainAs);
+    treeSession = createTreeSession(opening.root);
 
-    treeSession = createTreeSession(o.root);
+    restoreLastPathIntoSession(opening, treeSession);
     resetPositionFromSession();
+
+    persistAppState();
 
     renderOpenings();
 }
+
+function restoreLastPathIntoSession(opening, session) {
+    const path = Array.isArray(opening.lastPath) ? opening.lastPath : [];
+    for (const mv of path) {
+        const res = goForwardIfExists(session, mv);
+        if (!res.ok) break;
+    }
+}
+
 
 function renderOpenings() {
     openingsList.innerHTML = "";
