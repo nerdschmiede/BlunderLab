@@ -33,8 +33,65 @@
         <button id="redoBtn" class="iconbtn" type="button" aria-label="Redo">→</button>
         <button id="flipBtn" class="iconbtn" type="button" aria-label="Flip board">⇅</button>
         <button id="lichessBtn" class="iconbtn" type="button" aria-label="Lichess analysis">🔍︎</button>
-        <button id="studiesBtn" class="iconbtn" type="button" aria-label="Studies" title="Studies">☰</button>
+        <button id="menuBtn" class="iconbtn" type="button" aria-label="Menu" title="Menu">☰</button>
     </div>
+
+    <!-- Overlay: Openings -->
+    <div id="overlayBackdrop" class="overlay-backdrop hidden" aria-hidden="true"></div>
+
+    <section
+            id="openingsOverlay"
+            class="overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="openingsTitle"
+    >
+        <header class="overlay-header">
+            <h2 id="openingsTitle">Eröffnungen</h2>
+            <div class="overlay-header-actions">
+                <button id="newOpeningBtn" class="btn" type="button">+ Neu</button>
+                <button id="closeOverlayBtn" class="iconbtn" type="button" aria-label="Close" title="Close">✕</button>
+            </div>
+        </header>
+
+        <div class="overlay-body">
+            <ul id="openingsList" class="openings-list" aria-label="Openings list"></ul>
+        </div>
+    </section>
+
+    <!-- Overlay: Create / Rename dialog -->
+    <section
+            id="openingDialog"
+            class="overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialogTitle"
+    >
+        <header class="overlay-header">
+            <h2 id="dialogTitle">Neue Eröffnung</h2>
+            <button id="closeDialogBtn" class="iconbtn" type="button" aria-label="Close" title="Close">✕</button>
+        </header>
+
+        <div class="overlay-body">
+            <label class="field">
+                <span>Name</span>
+                <input id="openingNameInput" type="text" maxlength="60" placeholder="z.B. Caro-Kann" />
+            </label>
+
+            <div class="field">
+                <span>Ich trainiere als</span>
+                <div class="mode-toggle">
+                    <button id="trainAsWhiteBtn" class="seg" type="button">Weiß</button>
+                    <button id="trainAsBlackBtn" class="seg" type="button">Schwarz</button>
+                </div>
+            </div>
+
+            <div class="dialog-actions">
+                <button id="dialogCancelBtn" class="btn secondary" type="button">Abbrechen</button>
+                <button id="dialogOkBtn" class="btn primary" type="button">OK</button>
+            </div>
+        </div>
+    </section>
 </main>
 
 

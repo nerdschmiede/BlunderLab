@@ -9,7 +9,11 @@ import {
     goForwardIfExists,
     currentNode,
     isExpectedMove,
-    resetSessionToRoot
+    resetSessionToRoot,
+    createOpening,
+    loadFromStorage,
+    saveToStorage,
+    DEFAULT_STORAGE_KEY,
 } from "./src/tree.js";
 
 // -------------------- DOM --------------------
@@ -24,8 +28,29 @@ const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const flipBtn = document.getElementById("flipBtn");
 const lichessBtn = document.getElementById("lichessBtn");
+const menuBtn = document.getElementById("menuBtn");
+
+const backdrop = document.getElementById("overlayBackdrop");
+const overlay = document.getElementById("openingsOverlay");
+const closeOverlayBtn = document.getElementById("closeOverlayBtn");
+const openingsList = document.getElementById("openingsList");
+
+const newOpeningBtn = document.getElementById("newOpeningBtn");
+
+const openingDialog = document.getElementById("openingDialog");
+const openingNameInput = document.getElementById("openingNameInput");
+
+const trainAsWhiteBtn = document.getElementById("trainAsWhiteBtn");
+const trainAsBlackBtn = document.getElementById("trainAsBlackBtn");
+
+const dialogOkBtn = document.getElementById("dialogOkBtn");
+const dialogCancelBtn = document.getElementById("dialogCancelBtn");
+const closeDialogBtn = document.getElementById("closeDialogBtn");
+
 
 // -------------------- App state --------------------
+let appState = initAppState(localStorage);
+
 let mode = "edit"; // "edit" | "train" (train is stub for now)
 let orientation = "white";
 
@@ -42,13 +67,44 @@ let redoStack = [];
 let promoPick = null;      // { from, to, squares: [..] }
 let promoCustom = new Map();
 
-const boardUserMoveEvents = { after: onUserMove };
+const boardUserMoveEvents = {after: onUserMove};
+
+let dialogTrainAs = "white";
+let dialogMode = "create";   // "create" | "rename"
+let dialogTargetId = null;   // opening id
+
 
 // -------------------- Init --------------------
 initGround();
 wireUi();
 
 renderModeButtons();
+
+// Appstate laden, ggf. Erststart-Setup durchführen (z.B. Demo-Opening anlegen, active id fixen)
+function initAppState(storage) {
+    let state = loadFromStorage(storage, DEFAULT_STORAGE_KEY);
+
+    // Erststart: mindestens eine Opening
+    if (state.openings.length === 0) {
+        state.openings.push(createOpening({name: "Italienisch", trainAs: "white"}));
+        state.openings.push(createOpening({name: "Caro-Kann", trainAs: "black"}));
+        state.activeOpeningId = state.openings[0].id;
+        saveToStorage(state, storage, DEFAULT_STORAGE_KEY);
+    }
+
+    // active id reparieren
+    const activeIsValid =
+        state.activeOpeningId &&
+        state.openings.some((o) => o.id === state.activeOpeningId);
+
+    if (!activeIsValid) {
+        state.activeOpeningId = state.openings[0]?.id ?? null;
+        saveToStorage(state, storage, DEFAULT_STORAGE_KEY);
+    }
+
+    return state;
+}
+
 
 // -------------------- Chessground init --------------------
 function initGround() {
@@ -81,7 +137,7 @@ function onUserMove(from, to) {
         return;
     }
 
-    const moveKey = { from, to };
+    const moveKey = {from, to};
 
     if (mode === "train") {
         applyTrainingMove(moveKey);
@@ -90,6 +146,7 @@ function onUserMove(from, to) {
 
     applyEditMove(moveKey);
 }
+
 /* ---------------- User Move helpers ---------------- */
 
 function isPromotionOverlayActive() {
@@ -105,6 +162,7 @@ function applyEditMove(mv) {
     }
 
     addMoveToTree(legalMove);
+    persistAppState();
     clearRedoHistory();
     syncUi();
 }
@@ -115,6 +173,7 @@ function addMoveToTree(mv) {
         to: mv.to,
         promotion: mv.promotion,
     });
+    console.log("children of active root:", appState.openings.find(o => o.id === appState.activeOpeningId).root.children.length);
 }
 
 function clearRedoHistory() {
@@ -188,9 +247,6 @@ function tryGameMove(moveObj) {
         return null;
     }
 }
-
-
-
 
 // -------------------- Navigation: Undo/Redo via Tree path --------------------
 function undo() {
@@ -283,7 +339,7 @@ function movesToInlineText(moves) {
 
 
 function syncBoardOnly() {
-      ground.set({
+    ground.set({
         fen: game.fen(),
         orientation,
         movable: {
@@ -319,8 +375,6 @@ function setMode(nextMode) {
     // edit mode
     syncUi();
 }
-
-
 
 function renderModeButtons() {
     if (!editBtn || !trainBtn) return;
@@ -431,12 +485,202 @@ function promoSquares(to, chessColor) {
 // -------------------- Dests helper --------------------
 function calcDests(g) {
     const dests = new Map();
-    for (const m of g.moves({ verbose: true })) {
+    for (const m of g.moves({verbose: true})) {
         if (!dests.has(m.from)) dests.set(m.from, []);
         dests.get(m.from).push(m.to);
     }
     return dests;
 }
+
+// -------------------- Overlay Menu --------------------
+
+function openOverlay() {
+    backdrop.classList.remove("hidden");
+    overlay.classList.remove("hidden");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    renderOpenings();
+}
+
+function closeOverlay() {
+    overlay.classList.add("hidden");
+    backdrop.classList.add("hidden");
+    backdrop.setAttribute("aria-hidden", "true");
+}
+
+
+function persistAppState() {
+    saveToStorage(appState, localStorage, DEFAULT_STORAGE_KEY);
+}
+
+function selectOpening(id) {
+    const o = appState.openings.find(x => x.id === id);
+    if (!o) return;
+
+    appState.activeOpeningId = id;
+    persistAppState();
+
+    // ✅ runtime state
+    treeSession = createTreeSession(o.root);
+
+    // ✅ board sync
+    resetPositionFromSession();
+
+    renderOpenings();
+}
+
+function renderOpenings() {
+    openingsList.innerHTML = "";
+
+    for (const o of appState.openings) {
+        const li = document.createElement("li");
+        li.className = "opening-row" + (o.id === appState.activeOpeningId ? " active" : "");
+
+        li.innerHTML = `
+  <div class="opening-meta">
+    <strong>${o.name}</strong>
+    <div class="badge">Train as: ${o.trainAs}</div>
+  </div>
+  <div class="opening-actions">
+    <button class="iconbtn open-btn" type="button" aria-label="Öffnen" title="Öffnen">▶︎</button>
+    <button class="iconbtn rename-btn" type="button" aria-label="Umbenennen" title="Umbenennen">✎</button>
+    <button class="iconbtn delete-btn" type="button" aria-label="Löschen" title="Löschen">✕</button>
+  </div>
+
+`;
+
+        li.querySelector(".open-btn").addEventListener("click", () => {
+            selectOpening(o.id);
+            closeOverlay();
+        });
+
+        li.querySelector(".rename-btn").addEventListener("click", () => {
+            openRenameDialog(o.id);
+        });
+
+        li.querySelector(".delete-btn").addEventListener("click", () => {
+            deleteOpening(o.id);
+        });
+
+
+        openingsList.appendChild(li);
+    }
+}
+
+
+function openCreateDialog() {
+    dialogMode = "create";
+    dialogTargetId = null;
+
+    dialogTrainAs = "white";
+    updateTrainAsButtons();
+
+    openingNameInput.value = "";
+    openingDialog.classList.remove("hidden");
+
+    // backdrop muss sichtbar sein, falls Dialog auch ohne Overlay geöffnet wird
+    backdrop.classList.remove("hidden");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    openingNameInput.focus();
+}
+
+function closeOpeningDialog() {
+    openingDialog.classList.add("hidden");
+    dialogMode = "create";
+    dialogTargetId = null;
+}
+
+function submitOpeningFromDialog() {
+    const name = openingNameInput.value.trim();
+    if (!name) return {ok: false, reason: "empty-name"};
+
+    if (dialogMode === "create") {
+        const o = createOpening({name, trainAs: dialogTrainAs});
+        appState.openings.push(o);
+        appState.activeOpeningId = o.id;
+
+        persistAppState();
+        renderOpenings();
+
+        closeOpeningDialog();
+        closeOverlay();
+        return {ok: true, opening: o};
+    }
+
+    if (dialogMode === "rename") {
+        const o = appState.openings.find(x => x.id === dialogTargetId);
+        if (!o) return {ok: false, reason: "missing-opening"};
+
+        o.name = name;
+        // trainAs beim Rename NICHT ändern (würde ich fürs MVP weglassen)
+
+        persistAppState();
+        renderOpenings();
+
+        closeOpeningDialog();
+        // Overlay bleibt offen beim Rename ist meist angenehmer
+        return {ok: true, opening: o};
+    }
+
+    return {ok: false, reason: "unknown-mode"};
+}
+
+function openRenameDialog(openingId) {
+    const o = appState.openings.find(x => x.id === openingId);
+    if (!o) return;
+
+    dialogMode = "rename";
+    dialogTargetId = openingId;
+
+    openingNameInput.value = o.name;
+    dialogTrainAs = o.trainAs;     // anzeigen ok
+    updateTrainAsButtons();        // du kannst Buttons beim Rename auch disable'n
+
+    openingDialog.classList.remove("hidden");
+    backdrop.classList.remove("hidden");
+    backdrop.setAttribute("aria-hidden", "false");
+    openingNameInput.focus();
+}
+
+function deleteOpening(id) {
+    const o = appState.openings.find(x => x.id === id);
+    if (!o) return;
+
+    const ok = confirm(`Eröffnung "${o.name}" wirklich löschen?`);
+    if (!ok) return;
+
+    const idx = appState.openings.findIndex(x => x.id === id);
+    appState.openings.splice(idx, 1);
+
+    // aktive Opening reparieren
+    if (appState.activeOpeningId === id) {
+        appState.activeOpeningId = appState.openings[0]?.id ?? null;
+
+        if (appState.activeOpeningId) {
+            const next = appState.openings.find(x => x.id === appState.activeOpeningId);
+            treeSession = createTreeSession(next.root);
+            resetPositionFromSession();
+        }
+    }
+
+    persistAppState();
+    renderOpenings();
+
+    if (appState.openings.length === 0) {
+        const o = createOpening({name: "Meine Eröffnung", trainAs: "white"});
+        appState.openings.push(o);
+        appState.activeOpeningId = o.id;
+    }
+
+}
+
+
+function updateTrainAsButtons() {
+    trainAsWhiteBtn.classList.toggle("active", dialogTrainAs === "white");
+    trainAsBlackBtn.classList.toggle("active", dialogTrainAs === "black");
+}
+
 
 // -------------------- UI wiring --------------------
 function isTypingTarget(el) {
@@ -476,6 +720,39 @@ function wireUi() {
     flipBtn?.addEventListener("click", flipBoard);
     lichessBtn?.addEventListener("click", openLichessAnalysis);
 
+    menuBtn?.addEventListener("click", () => {
+        const isHidden = overlay.classList.contains("hidden");
+        if (isHidden) openOverlay();
+        else closeOverlay();
+    });
+
+    closeOverlayBtn?.addEventListener("click", closeOverlay);
+    backdrop?.addEventListener("click", closeOverlay);
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeOverlay();
+    });
+
+    newOpeningBtn.addEventListener("click", openCreateDialog);
+
+    trainAsWhiteBtn.addEventListener("click", () => {
+        dialogTrainAs = "white";
+        updateTrainAsButtons();
+    });
+
+    trainAsBlackBtn.addEventListener("click", () => {
+        dialogTrainAs = "black";
+        updateTrainAsButtons();
+    });
+
+    dialogCancelBtn.addEventListener("click", closeOpeningDialog);
+    closeDialogBtn.addEventListener("click", closeOpeningDialog);
+
+    dialogOkBtn.addEventListener("click", submitOpeningFromDialog);
+    openingNameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submitOpeningFromDialog();
+    });
+
     window.addEventListener("keydown", onKeyDown);
 }
 
@@ -483,6 +760,7 @@ function wireUi() {
 function moveToUci(m) {
     return `${m.from}${m.to}${m.promotion || ""}`;
 }
+
 function lineToText(line) {
     let out = [];
     for (let i = 0; i < line.length; i += 2) {
@@ -493,6 +771,7 @@ function lineToText(line) {
     }
     return out.join(" ");
 }
+
 function getAllLinesFromRoot(root) {
     const lines = [];
     const current = [];
