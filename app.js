@@ -80,6 +80,8 @@ wireUi();
 
 renderModeButtons();
 
+selectOpening(appState.activeOpeningId);
+
 // Appstate laden, ggf. Erststart-Setup durchführen (z.B. Demo-Opening anlegen, active id fixen)
 function initAppState(storage) {
     let state = loadFromStorage(storage, DEFAULT_STORAGE_KEY);
@@ -520,10 +522,9 @@ function selectOpening(id) {
     appState.activeOpeningId = id;
     persistAppState();
 
-    // ✅ runtime state
-    treeSession = createTreeSession(o.root);
+    orientation = orientationForTrainAs(o.trainAs);
 
-    // ✅ board sync
+    treeSession = createTreeSession(o.root);
     resetPositionFromSession();
 
     renderOpenings();
@@ -598,13 +599,13 @@ function submitOpeningFromDialog() {
     if (dialogMode === "create") {
         const o = createOpening({name, trainAs: dialogTrainAs});
         appState.openings.push(o);
-        appState.activeOpeningId = o.id;
-
         persistAppState();
-        renderOpenings();
+
+        selectOpening(o.id);
 
         closeOpeningDialog();
         closeOverlay();
+
         return {ok: true, opening: o};
     }
 
@@ -675,11 +676,15 @@ function deleteOpening(id) {
 
 }
 
-
 function updateTrainAsButtons() {
     trainAsWhiteBtn.classList.toggle("active", dialogTrainAs === "white");
     trainAsBlackBtn.classList.toggle("active", dialogTrainAs === "black");
 }
+
+function orientationForTrainAs(trainAs) {
+    return trainAs === "black" ? "black" : "white";
+}
+
 
 
 // -------------------- UI wiring --------------------
